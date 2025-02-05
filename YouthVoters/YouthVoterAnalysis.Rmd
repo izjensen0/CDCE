@@ -101,6 +101,7 @@ summary(just18outofyouth)
 controls1617total<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outoftotal+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
 summary(controls1617total)
 #only share white reached significance
+#white 0.3047 and p 0.0394
 
 controls1617youth<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outofyouth+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
 summary(controls1617youth)
@@ -109,6 +110,8 @@ summary(controls1617youth)
 controls18total<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outoftotal+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
 summary(controls18total)
 #white and median income are significant
+#white coefficient 0.4637 and p 0.002509
+#median income coefficient 2.632e-06 and p 0.064959
 
 controls18youth<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outofyouth+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
 summary(controls18youth)
