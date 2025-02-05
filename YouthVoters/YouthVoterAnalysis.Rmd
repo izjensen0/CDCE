@@ -12,7 +12,6 @@ library(dplyr)
 library(readr)
 
 
-
 MD_County_Registration <- read_excel("MD_County_Registration_and_Demos includes demonimator.xlsx")
 View(MD_County_Registration)
 
