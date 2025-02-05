@@ -1,0 +1,120 @@
+---
+title: "Youth Voters"
+author: "Isabelle Jensen"
+date: "2025-02-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+
+
+MD_County_Registration <- read_excel("MD_County_Registration_and_Demos includes demonimator.xlsx")
+View(MD_County_Registration)
+
+
+mva_youth <- read_csv("mva_youth_and_MD_county_registration (1).csv")
+View(mva_youth)
+
+data2 <- read_csv("data2.csv")
+View(data2)
+
+table(data2$county)
+table(mva_youth$county)
+
+data2_unique <- data2 %>%distinct(county, .keep_all = TRUE)
+mva_youth_unique <- mva_youth %>% distinct(county, .keep_all = TRUE)
+
+
+merged_data <- left_join(data2_unique, mva_youth_unique, by = "county")
+final_data <- left_join(merged_data, MD_County_Registration, by = c("county" = "labels"))
+View(final_data)
+
+head(final_data)
+
+
+final_data <- final_data[, colSums(!is.na(final_data)) > 0]
+
+colnames(final_data)
+
+
+final_data <- final_data %>%
+  mutate(percentage16and17outoftotal = ((age16 + age17) / total_md_drivers.y)*100)
+head(final_data$percentage16and17outoftotal)
+
+final_data <- final_data %>%
+  mutate(percentage18outoftotal = ((age18) / total_md_drivers.y)*100)
+head(final_data$percentage18outoftotal)
+
+
+final_data <- final_data %>%
+  mutate(percentage16and17outofyouth = ((age16 + age17) / (age16+age17+age18))*100)
+head(final_data$percentage16and17outofyouth)
+
+final_data <- final_data %>%
+  mutate(percentage18outofyouth = ((age18) / (age16+age17+age18))*100)
+head(final_data$percentage18outofyouth)
+```
+
+
+While you wait, can you take a quick look at the attached report and then dig into the attached data. For the report, I want to build on the regressions discussed toward the end of the report. I essentially want the following:
+1) a bivariate regression of license attainment and 16- and 17-year- old registration rates
+2) same for 18-year-old registration rates by county
+3) Model with license attainment, % white, median HH income, % bachelors degree, % speak language other than English for 16- and 17-year- old registration rates
+4) same as 3 but for 18-year-old registration rates
+
+Note that some of the license data has weird gaps, just use the most recent available info (e.g. if 16-year-olds' data is only available for 2021 just use that to get the rate (we can try other approaches later). Also, note that the relevant denominator is weird too, there is a note in the MD_County_Registration_... file on how to use this. Isaiah put together the datav2 file that has the rate out of 100 (so 3.6 means 3.6%). I suggest using this as a guide but constructing everything fresh and making sure the values are in the same units (so 10% is always .1 or 10 consistently, I prefer the decimal places)
+
+```{r bivariate}
+
+colnames(final_data)
+
+just1617outoftotal<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outoftotal, data = final_data)
+summary(just1617outoftotal)
+#estimate 0.20222
+#p value 0.00044
+#very significant
+
+just1617outofyouth<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outofyouth, data = final_data)
+summary(just1617outofyouth)
+#estimate 0.012915
+#p 6e-05
+#very significant
+
+
+just18outofall<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outoftotal, data = final_data)
+summary(just18outofall)
+#estimate 0.18823
+#p 0.00776
+#significant
+
+just18outofyouth<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outofyouth, data = final_data)
+summary(just18outofyouth)
+#-0.011833 estimate 
+#p value 0.00548
+#significant
+
+
+controls1617total<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outoftotal+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
+summary(controls1617total)
+#only share white reached significance
+
+controls1617youth<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outofyouth+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
+summary(controls1617youth)
+#none are significant
+
+controls18total<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outoftotal+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
+summary(controls18total)
+#white and median income are significant
+
+controls18youth<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outofyouth+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
+summary(controls18youth)
+#none are significant
+
+```
+
+
+Note 
