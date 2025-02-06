@@ -38,9 +38,167 @@ head(final_data)
 
 final_data <- final_data[, colSums(!is.na(final_data)) > 0]
 
+
+```
+
+
+While you wait, can you take a quick look at the attached report and then dig into the attached data. For the report, I want to build on the regressions discussed toward the end of the report. I essentially want the following:
+1) a bivariate regression of license attainment and 16- and 17-year- old registration rates
+2) same for 18-year-old registration rates by county
+3) Model with license attainment, % white, median HH income, % bachelors degree, % speak language other than English for 16- and 17-year- old registration rates
+4) same as 3 but for 18-year-old registration rates
+
+Note that some of the license data has weird gaps, just use the most recent available info (e.g. if 16-year-olds' data is only available for 2021 just use that to get the rate (we can try other approaches later). Also, note that the relevant denominator is weird too, there is a note in the MD_County_Registration_... file on how to use this. Isaiah put together the datav2 file that has the rate out of 100 (so 3.6 means 3.6%). I suggest using this as a guide but constructing everything fresh and making sure the values are in the same units (so 10% is always .1 or 10 consistently, I prefer the decimal places)
+
+
+```{r making correct variables}
 colnames(final_data)
 
 
+final_data <- final_data %>%
+  mutate(sixteenlicensepercent = ((age16) / est_16_or_17_or_18_yo_2023.x)*100)
+head(final_data$sixteenlicensepercent)
+
+
+final_data <- final_data %>%
+  mutate(seventeenlicensepercent = ((age17) / est_16_or_17_or_18_yo_2023.x)*100)
+head(final_data$seventeenlicensepercent)
+
+
+final_data <- final_data %>%
+  mutate(sixandseventeenlicensepercent = (((age16+age17) / (2*est_16_or_17_or_18_yo_2023.x))*100))
+
+head(final_data$sixandseventeenlicensepercent)
+
+
+final_data <- final_data %>%
+  mutate(eighteenlicensepercent = ((age18) / est_16_or_17_or_18_yo_2023.x)*100)
+head(final_data$eighteenlicensepercent)
+
+```
+
+```{r making correct bivariate no controls}
+colnames(final_data)
+
+
+
+
+sixteenjustprereg<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixteenlicensepercent, data = final_data)
+summary(sixteenjustprereg)
+#estimate 0.030662
+#p 0.000285
+#very significant
+
+
+seventeenjustprereg<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ seventeenlicensepercent, data = final_data)
+summary(seventeenjustprereg)
+#estimate 0.004484
+#p 5.46e-07
+#significant
+
+
+sixandsevenjustprereg<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixandseventeenlicensepercent, data = final_data)
+summary(sixandsevenjustprereg)
+#estimate 0.008194
+#p 5.14e-07
+#very significant
+
+
+eighteenjustreg<-lm(est_reg_rate_18_yo_as_of_202312.x ~ eighteenlicensepercent, data = final_data)
+summary(eighteenjustreg)
+#estimate 0.0043047
+#p 0.000128
+#very significant
+
+```
+
+```{r making correct bivariate with controls}
+
+sixteenwithcontrols<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixteenlicensepercent+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
+summary(sixteenwithcontrols)
+#only white is significant at p 0.0519 positive coefficient 
+
+
+seventeenwithcontrols<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ seventeenlicensepercent+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
+summary(seventeenwithcontrols)
+#only license percentage remains significant with p value 0.0104 and coefficient 4.490e-03
+
+sixandseventeenwithcontrols<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixandseventeenlicensepercent+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
+summary(sixandseventeenwithcontrols)
+#only license percentage remains significant with p value 0.00866 and coefficient 8.544e-03 
+
+
+eighteenwithcontrols<-lm(est_reg_rate_18_yo_as_of_202312.x ~ eighteenlicensepercent+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
+summary(eighteenwithcontrols)
+#nothing significant
+
+
+
+```
+
+
+
+```{r only 2023}
+str(final_data$year) 
+merged_data <- left_join(data2, mva_youth, by = "county")
+alljoin <- left_join(merged_data, MD_County_Registration, by = c("county" = "labels"))
+colnames(alljoin)
+data2023 <- alljoin %>% filter(year.x == 2023 & year.y == 2023)
+View(data2023)
+head(data2023)
+
+
+data2023 <- data2023 %>%
+  mutate(seventeenlicensepercent2023 = ((age17) / est_16_or_17_or_18_yo_2023.x)*100)
+head(data2023$seventeenlicensepercent2023)
+
+
+data2023 <- data2023 %>%
+  mutate(eighteenlicensepercent2023 = ((age18) / est_16_or_17_or_18_yo_2023.x)*100)
+head(data2023$eighteenlicensepercent2023)
+
+
+seventeenjustprereg2023<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ seventeenlicensepercent2023, data = data2023)
+summary(seventeenjustprereg2023)
+#coefficient 0.0044902
+#p value 1.91e-06
+#very significant
+
+
+eighteenjustreg2023<-lm(est_reg_rate_18_yo_as_of_202312.x ~ eighteenlicensepercent2023, data = data2023)
+summary(eighteenjustreg2023)
+#coefficient 0.0047481
+#p value 2.60e-05
+#very significant
+
+
+seventeencontrols2023<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ seventeenlicensepercent2023+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = data2023)
+summary(seventeencontrols2023)
+#only license percentage remains significant with p value 0.0284  and coefficient 3.820e-03 
+
+
+eighteencontrols2023<-lm(est_reg_rate_18_yo_as_of_202312.x ~ eighteenlicensepercent2023+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = data2023)
+summary(eighteencontrols2023)
+#only license percentage remains significant with p value 0.042018  and coefficient 4.478e-03
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Don't bother reading. This was all wrong kept it just in case.
+```{r bivariate using wrong propotions}
 final_data <- final_data %>%
   mutate(percentage16and17outoftotal = ((age16 + age17) / total_md_drivers.y)*100)
 head(final_data$percentage16and17outoftotal)
@@ -57,18 +215,6 @@ head(final_data$percentage16and17outofyouth)
 final_data <- final_data %>%
   mutate(percentage18outofyouth = ((age18) / (age16+age17+age18))*100)
 head(final_data$percentage18outofyouth)
-```
-
-
-While you wait, can you take a quick look at the attached report and then dig into the attached data. For the report, I want to build on the regressions discussed toward the end of the report. I essentially want the following:
-1) a bivariate regression of license attainment and 16- and 17-year- old registration rates
-2) same for 18-year-old registration rates by county
-3) Model with license attainment, % white, median HH income, % bachelors degree, % speak language other than English for 16- and 17-year- old registration rates
-4) same as 3 but for 18-year-old registration rates
-
-Note that some of the license data has weird gaps, just use the most recent available info (e.g. if 16-year-olds' data is only available for 2021 just use that to get the rate (we can try other approaches later). Also, note that the relevant denominator is weird too, there is a note in the MD_County_Registration_... file on how to use this. Isaiah put together the datav2 file that has the rate out of 100 (so 3.6 means 3.6%). I suggest using this as a guide but constructing everything fresh and making sure the values are in the same units (so 10% is always .1 or 10 consistently, I prefer the decimal places)
-
-```{r bivariate}
 
 colnames(final_data)
 
