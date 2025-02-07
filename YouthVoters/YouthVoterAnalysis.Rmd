@@ -51,36 +51,38 @@ While you wait, can you take a quick look at the attached report and then dig in
 Note that some of the license data has weird gaps, just use the most recent available info (e.g. if 16-year-olds' data is only available for 2021 just use that to get the rate (we can try other approaches later). Also, note that the relevant denominator is weird too, there is a note in the MD_County_Registration_... file on how to use this. Isaiah put together the datav2 file that has the rate out of 100 (so 3.6 means 3.6%). I suggest using this as a guide but constructing everything fresh and making sure the values are in the same units (so 10% is always .1 or 10 consistently, I prefer the decimal places)
 
 
-```{r making correct variables}
+
+
+
+```{r making license percentages }
+View(final_data)
 colnames(final_data)
 
 
 final_data <- final_data %>%
   mutate(sixteenlicensepercent = ((age16) / est_16_or_17_or_18_yo_2023.x)*100)
-head(final_data$sixteenlicensepercent)
 
 
 final_data <- final_data %>%
   mutate(seventeenlicensepercent = ((age17) / est_16_or_17_or_18_yo_2023.x)*100)
-head(final_data$seventeenlicensepercent)
 
 
 final_data <- final_data %>%
   mutate(sixandseventeenlicensepercent = (((age16+age17) / (2*est_16_or_17_or_18_yo_2023.x))*100))
 
-head(final_data$sixandseventeenlicensepercent)
-
 
 final_data <- final_data %>%
   mutate(eighteenlicensepercent = ((age18) / est_16_or_17_or_18_yo_2023.x)*100)
-head(final_data$eighteenlicensepercent)
+
+
+
+write.csv(final_data, "youthvoters2021.csv", row.names = FALSE)
 
 ```
 
-```{r making correct bivariate no controls}
+```{r 2021 bivariate no controls}
 colnames(final_data)
-
-
+View(final_data)
 
 
 sixteenjustprereg<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixteenlicensepercent, data = final_data)
@@ -112,7 +114,11 @@ summary(eighteenjustreg)
 
 ```
 
-```{r making correct bivariate with controls}
+
+
+
+
+```{r 2021 regressions with controls}
 
 sixteenwithcontrols<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixteenlicensepercent+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
 summary(sixteenwithcontrols)
@@ -138,7 +144,7 @@ summary(eighteenwithcontrols)
 
 
 
-```{r only 2023}
+```{r only 2023 bivariates}
 str(final_data$year) 
 merged_data <- left_join(data2, mva_youth, by = "county")
 alljoin <- left_join(merged_data, MD_County_Registration, by = c("county" = "labels"))
@@ -182,88 +188,8 @@ summary(eighteencontrols2023)
 #only license percentage remains significant with p value 0.042018  and coefficient 4.478e-03
 
 
-```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-Don't bother reading. This was all wrong kept it just in case.
-```{r bivariate using wrong propotions}
-final_data <- final_data %>%
-  mutate(percentage16and17outoftotal = ((age16 + age17) / total_md_drivers.y)*100)
-head(final_data$percentage16and17outoftotal)
-
-final_data <- final_data %>%
-  mutate(percentage18outoftotal = ((age18) / total_md_drivers.y)*100)
-head(final_data$percentage18outoftotal)
-
-
-final_data <- final_data %>%
-  mutate(percentage16and17outofyouth = ((age16 + age17) / (age16+age17+age18))*100)
-head(final_data$percentage16and17outofyouth)
-
-final_data <- final_data %>%
-  mutate(percentage18outofyouth = ((age18) / (age16+age17+age18))*100)
-head(final_data$percentage18outofyouth)
-
-colnames(final_data)
-
-just1617outoftotal<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outoftotal, data = final_data)
-summary(just1617outoftotal)
-#estimate 0.20222
-#p value 0.00044
-#very significant
-
-just1617outofyouth<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outofyouth, data = final_data)
-summary(just1617outofyouth)
-#estimate 0.012915
-#p 6e-05
-#very significant
-
-
-just18outofall<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outoftotal, data = final_data)
-summary(just18outofall)
-#estimate 0.18823
-#p 0.00776
-#significant
-
-just18outofyouth<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outofyouth, data = final_data)
-summary(just18outofyouth)
-#-0.011833 estimate 
-#p value 0.00548
-#significant
-
-
-controls1617total<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outoftotal+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
-summary(controls1617total)
-#only share white reached significance
-#white 0.3047 and p 0.0394
-
-controls1617youth<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ percentage16and17outofyouth+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
-summary(controls1617youth)
-#none are significant
-
-controls18total<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outoftotal+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
-summary(controls18total)
-#white and median income are significant
-#white coefficient 0.4637 and p 0.002509
-#median income coefficient 2.632e-06 and p 0.064959
-
-controls18youth<-lm(est_reg_rate_18_yo_as_of_202312.x ~ percentage18outofyouth+ share_white.x + est_med_hh_income_2022_dollars.x + share_bachelors_degree_plus.x + share_language_other_than_english.x , data = final_data)
-summary(controls18youth)
-#none are significant
+write.csv(data2023, "youthvoters2023.csv", row.names = FALSE)
 
 ```
 
-
-Note 
