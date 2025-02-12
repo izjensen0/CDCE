@@ -83,7 +83,7 @@ write.csv(final_data, "youthvoters2021.csv", row.names = FALSE)
 ```{r 2021 bivariate no controls}
 colnames(final_data)
 View(final_data)
-
+youth2021 <- read_csv("youthvoters2021.csv")
 
 sixteenjustprereg<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixteenlicensepercent, data = final_data)
 summary(sixteenjustprereg)
@@ -188,8 +188,100 @@ summary(eighteencontrols2023)
 #only license percentage remains significant with p value 0.042018  and coefficient 4.478e-03
 
 
-
+youth2023 <- read_csv("youthvoters2023.csv")
 write.csv(data2023, "youthvoters2023.csv", row.names = FALSE)
 
 ```
+```{r graphs}
 
+colnames(final_data)
+sixandsevenjustprereg<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixandseventeenlicensepercent, data = final_data)
+summary(sixandsevenjustprereg)
+
+View(final_data)
+glimpse(final_data$est_prereg_rate_16_17_yo_as_of_202312.x)
+final_data$est_prereg_rate_16_17_yo_as_of_202312.percentage <- final_data$est_prereg_rate_16_17_yo_as_of_202312.x * 100
+
+library(ggplot2)
+library(ggrepel)
+library(stringr)
+
+# Example scatterplot with regression line and labeled points
+ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16_17_yo_as_of_202312.percentage, label = county)) +
+  geom_point() +  
+  geom_smooth(method = "lm", color = "blue") +  # Add regression line
+  geom_text(vjust = -0.5, hjust = 0.5, size = 3)+  # Label points
+  theme_minimal() +  # Use a clean theme
+  labs(x = "Percent of 16 and 17 year olds with license", y = "Preregistration Rates of 16 and 17 year olds", title = "Scatterplot with Regression Line and Labels")
+
+
+
+final_data$countynice <- str_replace_all(final_data$county, "_", " ")  # Replace underscores
+final_data$countynice <- str_to_title(final_data$countynice)  # Capitalize each word
+
+# Check the result
+glimpse(final_data$countynice)
+
+# Create the scatterplot with better label positioning
+ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16_17_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point() +  
+  geom_smooth(method = "lm", color = "blue") +  # Add regression line
+  geom_text_repel(size = 3, box.padding = 0.25, point.padding = 0.3) +  # Improve label spacing
+  theme_gray() +  # Use a clean theme
+  labs(x = "Percent of 16 and 17 Year Olds with License", 
+       y = "Preregistration Percentage of 16 and 17 Year Olds", 
+       title = "Relationship Between 16 and 17 Year Old License Holding and Preregistration")
+
+
+data2023$countynice <- str_replace_all(data2023$county, "_", " ")  # Replace underscores
+data2023$countynice <- str_to_title(data2023$countynice)
+data2023$est_reg_rate_18_yo_as_of_202312.percentage <- data2023$est_reg_rate_18_yo_as_of_202312.x * 100
+ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point() +  
+  geom_smooth(method = "lm", color = "blue") +  # Add regression line
+  geom_text_repel(size = 3, box.padding = 0.25, point.padding = 0.3) +  # Improve label spacing
+  theme_gray()  +  # Use a clean theme
+  labs(x = "Percent of 18 Year Olds with License", 
+       y = "Registration Percentage of 18 Year Olds", 
+       title = "Relationship Between 18 Year Old License Holding and Registration")
+
+```
+
+
+
+
+
+```{r, echo=FALSE, fig.show="hold"}
+
+ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16_17_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point() +  
+  geom_smooth(method = "lm", color = "blue") +  # Add regression line
+  geom_text_repel(size = 3, box.padding = 0.25, point.padding = 0.3) +  # Improve label spacing
+  theme_gray() +  # Use a clean theme
+  labs(x = "Percent of 16 and 17 Year Olds with License", 
+       y = "Preregistration Percentage of 16 and 17 Year Olds", 
+       title = "Relationship Between 16 and 17 Year Old License Holding and Preregistration")
+
+
+
+data2023$est_prereg_rate_16_17_yo_as_of_202312.percentage <- data2023$est_prereg_rate_16_17_yo_as_of_202312.x * 100
+ggplot(data2023, aes(x = seventeenlicensepercent2023, y = est_prereg_rate_16_17_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point() +  
+  geom_smooth(method = "lm", color = "blue") +  # Add regression line
+  geom_text_repel(size = 3, box.padding = 0.25, point.padding = 0.3) +  # Improve label spacing
+  theme_gray()  +  # Use a clean theme
+  labs(x = "Percent of 17 Year Olds with License", 
+       y = "Registration Percentage of 17 Year Olds", 
+       title = "Relationship Between 17 Year Old License Holding and Registration")
+
+
+ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point() +  
+  geom_smooth(method = "lm", color = "blue") +  # Add regression line
+  geom_text_repel(size = 3, box.padding = 0.25, point.padding = 0.3) +  # Improve label spacing
+  theme_gray()  +  # Use a clean theme
+  labs(x = "Percent of 18 Year Olds with License", 
+       y = "Registration Percentage of 18 Year Olds", 
+       title = "Relationship Between 18 Year Old License Holding and Registration")
+
+```

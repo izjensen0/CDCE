@@ -97,6 +97,9 @@ fwrite(ClarkCountyVoterwithAllegiant, "ClarkCountyVoterwithAllegiant.csv", row.n
 View(ClarkCountyVoterwithAllegiant)
 
 
+ClarkCountyVoterwithAllegiant <- read_csv("ClarkCountyVoterwithAllegiant.csv")
+
+
 summary(ClarkCountyVoterwithAllegiant$`Birth Date`)
 glimpse(ClarkCountyVoterwithAllegiant$`Birth Date`)
 
@@ -139,33 +142,11 @@ ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
     age = as.integer(interval(birth_date, today()) / years(1))  # Compute Age
   )
 
-
-ClarkCountyVoterwithAllegiantnames %>%
-  filter(!is.na(age)) %>%  # Remove rows where age is NA
-  mutate(age_group = cut(age, breaks = c(18, 30, 45, 60, 100), labels = c("18-29", "30-44", "45-59", "60+"))) %>%
-  tabyl(age_group, allegiant_voter) %>%
-  adorn_percentages("row") %>%
-  adorn_totals(c("row", "col")) %>%
-  adorn_pct_formatting()
-
-ClarkCountyVoterwithAllegiant_unique <- ClarkCountyVoterwithAllegiantnames %>%
-  group_by(voter_id) %>%
+ClarkCountyVoterwithAllegiantnames_unique <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(VoterID) %>%
   summarise(age = first(age),  # Keep only one age per voter
             allegiant_voter = first(allegiant_voter)) %>%  # Keep first Yes/No status
   ungroup()
-
-ClarkCountyVoterwithAllegiant_unique %>%
-  filter(!is.na(age)) %>%  # Remove rows where age is NA
-  mutate(age_group = cut(age, breaks = c(18, 30, 45, 60, 100), labels = c("18-29", "30-44", "45-59", "60+"))) %>%
-  tabyl(age_group, allegiant_voter) %>%
-  adorn_percentages("row") %>%
-  adorn_totals(c("row", "col")) %>%
-  adorn_pct_formatting()
-
-table(ClarkCountyVoterwithAllegiant_unique$allegiant_voter, useNA = "always")
-table(is.na(ClarkCountyVoterwithAllegiant_unique$age), ClarkCountyVoterwithAllegiant_unique$allegiant_voter)
-
-#most stadium voters have NA for Age
 
 ClarkCountyVoterwithAllegiant_unique %>%
   filter(allegiant_voter == "Yes" & !is.na(age)) %>%  # Keep only stadium voters with age
@@ -174,7 +155,32 @@ ClarkCountyVoterwithAllegiant_unique %>%
   adorn_totals() %>%
   adorn_pct_formatting()
 
+
+
+library(gmodels)
+
+CrossTable(ClarkCountyVoterwithAllegiant_unique$allegiant_voter, ClarkCountyVoterwithAllegiant_unique$age, prop.chisq = FALSE, prop.t = FALSE, prop.r = TRUE)
+
+
 ```
+
+
+
+
+
+```{r, echo=TRUE, results='asis'}
+CrossTable(ClarkCountyVoterwithAllegiant_unique$allegiant_voter, ClarkCountyVoterwithAllegiant_unique$age, 
+           prop.chisq = FALSE, prop.t = FALSE, prop.r = TRUE)
+
+
+
+
+
+
+```
+
+
+
 
 Of stadium voters who gave their age
  age_group   n percent
