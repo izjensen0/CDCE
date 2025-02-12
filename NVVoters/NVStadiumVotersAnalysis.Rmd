@@ -1,0 +1,197 @@
+---
+title: "NVStadiumVoters"
+author: "Isabelle Jensen"
+date: "2025-02-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+
+NVEligibleVoters <- read_csv("VoterList.63884.013125094408/VoterList.ElgbVtr.63884.013125094408.csv")
+NVVoteHistory <- read_csv("VoterList.63884.013125094408/VoterList.VtHst.63884.013125094408.csv")
+StadiumVoters <- read_excel("AllegiantVotes_2024GeneralElection_VoterIDs (1).xlsx")
+
+colnames(NVEligibleVoters)
+glimpse(NVEligibleVoters)
+#View(NVEligibleVoters)
+
+colnames(NVVoteHistory)
+glimpse(NVVoteHistory)
+#View(NVVoteHistory)
+
+colnames(StadiumVoters)
+
+ClarkCountyVoters <- NVEligibleVoters %>%
+  filter(`Residential County` == "Clark")
+
+StadiumVoters <- StadiumVoters %>%
+  mutate(Allegiant_Voter = "Yes")
+#View(StadiumVoters)
+
+
+ClarkVoterIDs <- ClarkCountyVoters %>%
+  select(VoterID)
+
+
+ClarkCountyVoteHistory <- NVVoteHistory %>%
+  semi_join(ClarkVoterIDs, by = "VoterID")
+#View(ClarkCountyVoteHistory)
+
+
+#write.csv(ClarkCountyVoteHistory, "ClarkCountyVoteHistory.csv", row.names = FALSE)
+```
+
+
+
+The second step is to drop anyone not in Clark County. Note that if any of the IDs don't match you will want to go back and see if they show up elsewhere (might have moved since the election).
+
+-The third step is to match the records of the attached and create a variable for voted at Allegiant Stadium.
+
+-Fourth, do some basic comparisons by age, vote history (especially first time voters), and party reg to compare stadium voters, in-person non-stadium voters, voters by mail, and non-voters. 
+
+
+
+```{r combine datasets}
+ClarkCountyVoteHistory %>%
+  count(VoterID) %>%
+  count(n)  # Counts how many voters have 1, 2, 3... elections BEFORE distinct()
+
+
+
+#ClarkCountyVoteHistory <- read_csv("ClarkCountyVoteHistory.csv")
+#colnames(ClarkCountyVoteHistory)
+
+ClarkCountyVoteHistory <- ClarkCountyVoteHistory %>%
+  rename(Election_Date = `Election Date`, Vote_Code = `Vote Code`)
+colnames(ClarkCountyVoteHistory)
+
+
+ClarkCountyVotersandHistory <- ClarkCountyVoters %>%
+ left_join(ClarkCountyVoteHistory, by = "VoterID")
+
+View(ClarkCountyVotersandHistory)
+colnames(ClarkCountyVotersandHistory)
+
+
+
+ClarkCountyVoterwithAllegiant <- ClarkCountyVotersandHistory %>%
+  full_join(
+    StadiumVoters %>% select(ID_Number, Allegiant_Voter) %>% rename(VoterID = ID_Number),
+    by = "VoterID"
+  ) %>%
+  mutate(Allegiant_Voter = replace_na(Allegiant_Voter, "No"))  # Ensures non-stadium voters are marked "No"
+
+colnames(ClarkCountyVoterwithAllegiant)
+
+
+
+library(data.table)
+
+fwrite(ClarkCountyVoterwithAllegiant, "ClarkCountyVoterwithAllegiant.csv", row.names = FALSE)
+View(ClarkCountyVoterwithAllegiant)
+
+
+summary(ClarkCountyVoterwithAllegiant$`Birth Date`)
+glimpse(ClarkCountyVoterwithAllegiant$`Birth Date`)
+
+```
+clark county voting amounts
+1	300256			
+2	176476			
+3	139314			
+4	110424			
+5	99003			
+6	82866			
+7	72829			
+8	61572			
+9	47326			
+10	36775	
+
+```{r analysis of joined data}
+
+
+library(lubridate)
+library(dplyr)
+library(janitor)
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiant %>%
+  clean_names()
+colnames(ClarkCountyVoterwithAllegiantnames)
+View(ClarkCountyVoterwithAllegiant)
+
+str(ClarkCountyVoterwithAllegiantnames$birth_date)
+
+
+
+
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  mutate(
+    birth_date = mdy(birth_date)  # Convert from character to Date format
+  )
+
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  mutate(
+    age = as.integer(interval(birth_date, today()) / years(1))  # Compute Age
+  )
+
+
+ClarkCountyVoterwithAllegiantnames %>%
+  filter(!is.na(age)) %>%  # Remove rows where age is NA
+  mutate(age_group = cut(age, breaks = c(18, 30, 45, 60, 100), labels = c("18-29", "30-44", "45-59", "60+"))) %>%
+  tabyl(age_group, allegiant_voter) %>%
+  adorn_percentages("row") %>%
+  adorn_totals(c("row", "col")) %>%
+  adorn_pct_formatting()
+
+ClarkCountyVoterwithAllegiant_unique <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  summarise(age = first(age),  # Keep only one age per voter
+            allegiant_voter = first(allegiant_voter)) %>%  # Keep first Yes/No status
+  ungroup()
+
+ClarkCountyVoterwithAllegiant_unique %>%
+  filter(!is.na(age)) %>%  # Remove rows where age is NA
+  mutate(age_group = cut(age, breaks = c(18, 30, 45, 60, 100), labels = c("18-29", "30-44", "45-59", "60+"))) %>%
+  tabyl(age_group, allegiant_voter) %>%
+  adorn_percentages("row") %>%
+  adorn_totals(c("row", "col")) %>%
+  adorn_pct_formatting()
+
+table(ClarkCountyVoterwithAllegiant_unique$allegiant_voter, useNA = "always")
+table(is.na(ClarkCountyVoterwithAllegiant_unique$age), ClarkCountyVoterwithAllegiant_unique$allegiant_voter)
+
+#most stadium voters have NA for Age
+
+ClarkCountyVoterwithAllegiant_unique %>%
+  filter(allegiant_voter == "Yes" & !is.na(age)) %>%  # Keep only stadium voters with age
+  mutate(age_group = cut(age, breaks = c(18, 30, 45, 60, 100), labels = c("18-29", "30-44", "45-59", "60+"))) %>%
+  tabyl(age_group) %>%
+  adorn_totals() %>%
+  adorn_pct_formatting()
+
+```
+
+Of stadium voters who gave their age
+ age_group   n percent
+     18-29   3    0.8%
+     30-44  73   19.1%
+     45-59 117   30.6%
+       60+ 189   49.5%
+     Total 382  100.0%
+
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
