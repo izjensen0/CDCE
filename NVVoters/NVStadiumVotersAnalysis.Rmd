@@ -12,6 +12,7 @@ library(dplyr)
 library(readr)
 library(tidyr)
 library(data.table)
+library(knitr)
 
 NVEligibleVoters <- read_csv("VoterList.63884.013125094408/VoterList.ElgbVtr.63884.013125094408.csv")
 NVVoteHistory <- read_csv("VoterList.63884.013125094408/VoterList.VtHst.63884.013125094408.csv")
@@ -91,8 +92,6 @@ colnames(ClarkCountyVoterwithAllegiant)
 
 
 
-library(data.table)
-
 fwrite(ClarkCountyVoterwithAllegiant, "ClarkCountyVoterwithAllegiant.csv", row.names = FALSE)
 View(ClarkCountyVoterwithAllegiant)
 
@@ -118,6 +117,7 @@ clark county voting amounts
 
 ```{r analysis of joined data}
 
+ClarkCountyVoterwithAllegiant <- read_csv("ClarkCountyVoterwithAllegiant.csv")
 
 library(lubridate)
 library(dplyr)
@@ -125,7 +125,7 @@ library(janitor)
 ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiant %>%
   clean_names()
 colnames(ClarkCountyVoterwithAllegiantnames)
-View(ClarkCountyVoterwithAllegiant)
+View(ClarkCountyVoterwithAllegiantnames)
 
 str(ClarkCountyVoterwithAllegiantnames$birth_date)
 
@@ -142,13 +142,15 @@ ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
     age = as.integer(interval(birth_date, today()) / years(1))  # Compute Age
   )
 
-ClarkCountyVoterwithAllegiantnames_unique <- ClarkCountyVoterwithAllegiantnames %>%
-  group_by(VoterID) %>%
+colnames(ClarkCountyVoterwithAllegiantnames)
+
+ClarkCountyVoterwithAllegiantnames_unique <- ClarkCountyVoterwithAllegiantnames_unique %>%
+  group_by(voter_id) %>%
   summarise(age = first(age),  # Keep only one age per voter
             allegiant_voter = first(allegiant_voter)) %>%  # Keep first Yes/No status
   ungroup()
 
-ClarkCountyVoterwithAllegiant_unique %>%
+ClarkCountyVoterwithAllegiantnames_unique %>%
   filter(allegiant_voter == "Yes" & !is.na(age)) %>%  # Keep only stadium voters with age
   mutate(age_group = cut(age, breaks = c(18, 30, 45, 60, 100), labels = c("18-29", "30-44", "45-59", "60+"))) %>%
   tabyl(age_group) %>%
@@ -159,28 +161,94 @@ ClarkCountyVoterwithAllegiant_unique %>%
 
 library(gmodels)
 
-CrossTable(ClarkCountyVoterwithAllegiant_unique$allegiant_voter, ClarkCountyVoterwithAllegiant_unique$age, prop.chisq = FALSE, prop.t = FALSE, prop.r = TRUE)
+CrossTable(ClarkCountyVoterwithAllegiantnames_unique$allegiant_voter, ClarkCountyVoterwithAllegiantnames_unique$age, prop.chisq = FALSE, prop.t = FALSE, prop.r = TRUE)
 
+library(gmodels)
+library(dplyr)
 
-```
+# Create age groups
+ClarkCountyVoterwithAllegiantnames_unique <- ClarkCountyVoterwithAllegiantnames_unique %>%
+  mutate(age_group = cut(age, breaks = c(18, 29, 39, 49, 59, 69, 79, 100),
+                         labels = c("18-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80+"),
+                         include.lowest = TRUE))
 
-
-
-
-
-```{r, echo=TRUE, results='asis'}
-CrossTable(ClarkCountyVoterwithAllegiant_unique$allegiant_voter, ClarkCountyVoterwithAllegiant_unique$age, 
+# Crosstab with age groups
+CrossTable(ClarkCountyVoterwithAllegiantnames_unique$allegiant_voter, 
+           ClarkCountyVoterwithAllegiantnames_unique$age_group, 
            prop.chisq = FALSE, prop.t = FALSE, prop.r = TRUE)
 
+ftable(table(ClarkCountyVoterwithAllegiantnames_unique$allegiant_voter, 
+             ClarkCountyVoterwithAllegiantnames_unique$age_group))
 
+crosstabageallegiant <- table(ClarkCountyVoterwithAllegiantnames_unique$allegiant_voter, 
+                  ClarkCountyVoterwithAllegiantnames_unique$age_group)
+
+crosstabageallegiant_percent_row <- prop.table(crosstabageallegiant, margin = 1) * 100
+print(round(crosstabageallegiant_percent_row, 1))
+
+
+```
+     18-29 30-39 40-49 50-59 60-69 70-79  80+
+  No   20.4  19.1  16.2  15.1  14.2  10.4  4.7
+  Yes   0.0  11.3  16.0  22.0  25.4  14.4 11.0
+
+
+
+
+```{r}
+library(dplyr)
+
+# Ensure election_date is a date format
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  mutate(election_date = as.Date(election_date, format = "%Y-%m-%d"))
+
+# Filter dataset to keep only the most recent record per voter_id
+ClarkCountyVoterwithAllegiantnames_unique <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  arrange(desc(election_date)) %>%  # Sort by most recent election date
+  slice(1) %>%  # Keep only the first (most recent) record per voter_id
+  ungroup()
+
+# Check the new dataset
+nrow(ClarkCountyVoterwithAllegiantnames_unique)  # Should be the number of unique voters
+
+
+
+
+colnames(ClarkCountyVoterwithAllegiantnames_unique)
+crosstabparty <- CrossTable(ClarkCountyVoterwithAllegiantnames_unique$allegiant_voter, 
+                            ClarkCountyVoterwithAllegiantnames_unique$party, 
+                            prop.chisq = FALSE, prop.t = FALSE, prop.r = TRUE)
+
+
+
+# Create a contingency table of allegiant_voter vs party
+crosstabparty <- table(ClarkCountyVoterwithAllegiantnames_unique$allegiant_voter, 
+                       ClarkCountyVoterwithAllegiantnames_unique$party)
+
+# Compute row-wise percentages
+crosstabparty_percent_row <- prop.table(crosstabparty, margin = 1) * 100
+
+# Print the table rounded to 1 decimal place for readability
+print(round(crosstabparty_percent_row, 1))
 
 
 
 
 ```
 
-
-
+partisanship percentages
+      Democrat Independent American Party Libertarian Party
+  No      31.5                        4.4               0.7
+  Yes     38.2                        4.7               0.0
+     
+      Nevada Forward Party Nevada Green Party Nevada Transhumanist Party
+  No                   0.0                0.1                        0.0
+  Yes                  0.0                0.0                        0.0
+     
+      No Labels Nevada Non-Partisan Other (All Others) Republican
+  No               0.0         36.3                1.8       25.2
+  Yes              0.0         15.7                0.8       40.6
 
 Of stadium voters who gave their age
  age_group   n percent
@@ -192,12 +260,35 @@ Of stadium voters who gave their age
 
 
 
-## Including Plots
+ do some basic comparisons by age, vote history (especially first time voters), and party reg to compare stadium voters, in-person non-stadium voters, voters by mail, and non-voters. 
 
-You can also embed plots, for example:
+```{r first time voters}
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+library(dplyr)
+View(ClarkCountyVoterwithAllegiantnames)
+colnames(ClarkCountyVoterwithAllegiantnames)
+glimpse(ClarkCountyVoterwithAllegiantnames$election_date)
+
+# Ensure election_date is in Date format
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  mutate(election_date = as.Date(election_date, format = "%Y-%m-%d"))
+
+# Identify first-time voters by finding their earliest recorded vote
+first_votes <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  summarize(first_vote_date = min(election_date, na.rm = TRUE), .groups = "drop")
+
+# Mark whether their first recorded vote was in November 2024
+first_votes <- first_votes %>%
+  mutate(first_time_voter_nov2024 = ifelse(format(first_vote_date, "%Y-%m") == "2024-11", 1, 0))
+
+# Merge back with original data to retain voter details
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  left_join(first_votes, by = "voter_id")
+
+# Check how many first-time voters exist in November 2024
+table(ClarkCountyVoterwithAllegiantnames$first_time_voter_nov2024)
+
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
