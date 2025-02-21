@@ -1,0 +1,177 @@
+---
+title: "NVStadium3"
+author: "Isabelle Jensen"
+date: "2025-02-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
+
+```
+
+
+
+
+
+```{r}
+NVEligibleVoters <- read_csv("VoterList.63884.013125094408/VoterList.ElgbVtr.63884.013125094408.csv") 
+
+NVVoteHistory <- read_csv("VoterList.63884.013125094408/VoterList.VtHst.63884.013125094408.csv")  # Load vote history later
+
+StadiumVoters <- read_excel("AllegiantVotes_2024GeneralElection_VoterIDs (1).xlsx") %>%
+  rename(VoterID = ID_Number)  # Standardize column name for merging
+
+
+```
+## Identify Stadium Voters in Main Files
+
+```{r filter-clark-county}
+ClarkCountyVoters <- NVEligibleVoters %>%
+  filter(`Residential County` == "Clark")
+```
+
+## Add Allegiant Stadium Voter Flag
+```{r mark-allegiant-voters}
+StadiumVoters <- StadiumVoters %>%
+  mutate(Allegiant_Voter = "Yes")
+```
+
+## Merge Clark County Voters with Vote History
+```{r merge-vote-history}
+ClarkCountyVoteHistory <- NVVoteHistory %>%
+  semi_join(ClarkCountyVoters, by = "VoterID")
+
+ClarkCountyVotersAndHistory <- ClarkCountyVoters %>%
+  left_join(ClarkCountyVoteHistory, by = "VoterID")
+```
+
+## Merge in Allegiant Stadium Voter Data
+```{r merge-allegiant-data}
+ClarkCountyVoterWithAllegiant <- ClarkCountyVotersAndHistory %>%
+  full_join(StadiumVoters, by = "VoterID")
+
+```
+
+## Clean Column Names
+```{r clean-names}
+ClarkCountyVoterWithAllegiantNames <- ClarkCountyVoterWithAllegiant %>%
+  clean_names()
+table(ClarkCountyVoterWithAllegiantNames$allegiant_voter)
+
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  mutate(total_votes = n_distinct(election_date)) %>%
+  ungroup()
+table(distinct_voters$allegiant_voter)
+
+distinct_voters <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  summarise(allegiant_voter = first(allegiant_voter),
+            total_votes = first(total_votes))  # Use first() to ensure each voter is counted once
+```
+
+## Keep Only the Most Recent Election Per Voter
+```{r keep-recent-election}
+ClarkCountyVoterWithAllegiantNamesUnique <- ClarkCountyVoterWithAllegiantNames %>%
+  group_by(voter_id) %>%
+  arrange(desc(election_date)) %>%
+  slice(1) %>%
+  ungroup()
+
+table(ClarkCountyVoterWithAllegiantNamesUnique$allegiant_voter)
+
+CrossTable(ClarkCountyVoterWithAllegiantNamesUnique$party, ClarkCountyVoterWithAllegiantNamesUnique$allegiant_voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+```
+
+
+
+
+##what i made before
+```{r}
+ClarkCountyVoterwithAllegiant <- read_csv("ClarkCountyVoterwithAllegiant.csv")
+
+
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiant %>%
+  clean_names()
+
+table(ClarkCountyVoterwithAllegiantnames$allegiant_voter)
+
+CrossTable(ClarkCountyVoterwithAllegiantnames$party, ClarkCountyVoterwithAllegiantnames$allegiant_voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  mutate(total_votes = n_distinct(election_date)) %>%
+  ungroup()
+
+CrossTable(ClarkCountyVoterwithAllegiantnames$total_votes, 
+           ClarkCountyVoterwithAllegiantnames$allegiant_voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+length(unique(ClarkCountyVoterwithAllegiantnames$voter_id))
+1645988/6265266
+#0.2627164
+
+
+distinct_voters <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  summarise(allegiant_voter = first(allegiant_voter),
+            total_votes = first(total_votes))  # Use first() to ensure each voter is counted once
+CrossTable(distinct_voters$total_votes, distinct_voters$allegiant_voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+table(distinct_voters$allegiant_voter)
+
+write_csv(distinct_voters, "AllegiantVoterswithdata.csv")
+
+distinct_voters <- read_csv("AllegiantVoterswithdata.csv")
+
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+ClarkCountyVoters <- NVEligibleVoters %>%
+  filter(`Residential County` == "Clark")
+
+StadiumVoters <- StadiumVoters %>%
+  mutate(Allegiant_Voter = "Yes")
+
+ClarkVoterIDs <- ClarkCountyVoters %>%
+  select(VoterID)
+
+ClarkCountyVoteHistory <- NVVoteHistory %>%
+  semi_join(ClarkVoterIDs, by = "VoterID")
+
+ClarkCountyVotersandHistory <- ClarkCountyVoters %>%
+  left_join(ClarkCountyVoteHistory, by = "VoterID")
+
+ClarkCountyVoterwithAllegiant <- ClarkCountyVotersandHistory %>%
+   full_join(
+    StadiumVoters %>% select(VoterID, Allegiant_Voter),
+    by = "VoterID"  ) %>%
+   mutate(Allegiant_Voter = replace_na(Allegiant_Voter, "No"))  # Ensures non-stadium voters are marked "No"
+colnames(ClarkCountyVoterwithAllegiant)
+
+table(ClarkCountyVoterwithAllegiant$Allegiant_Voter)
+
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

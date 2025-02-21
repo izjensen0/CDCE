@@ -1,0 +1,164 @@
+---
+title: "FixedNVStadiumVoterAnalysis"
+author: "Isabelle Jensen"
+date: "2025-02-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
+
+
+
+
+
+
+```
+
+```{r}
+
+ClarkNVEligibleVoters <- read_csv("VoterList.63884.013125094408/VoterList.ElgbVtr.63884.013125094408.csv") %>%
+  filter(`Residential County` == "Clark")  # Subset Clark County early
+
+NVVoteHistory <- read_csv("VoterList.63884.013125094408/VoterList.VtHst.63884.013125094408.csv")  # Load vote history later
+
+StadiumVoters <- read_excel("AllegiantVotes_2024GeneralElection_VoterIDs (1).xlsx") %>%
+  rename(VoterID = ID_Number)  # Standardize column name for merging
+colnames(ClarkNVEligibleVoters)
+colnames(NVVoteHistory)
+colnames(StadiumVoters)
+
+
+
+# Convert VoterID to character in all datasets
+ClarkNVEligibleVoters <- ClarkNVEligibleVoters %>%
+  mutate(VoterID = as.character(as.integer(VoterID)))  # Ensure numeric IDs become character
+
+NVVoteHistory <- NVVoteHistory %>%
+  mutate(VoterID = as.character(as.integer(VoterID)))
+
+StadiumVoters <- StadiumVoters %>%
+  mutate(VoterID = as.character(as.integer(VoterID)))
+
+str(ClarkNVEligibleVoters$VoterID)
+str(NVVoteHistory$VoterID)
+str(StadiumVoters$VoterID)
+
+matched_stadium_voters <- StadiumVoters %>%
+  filter(VoterID %in% ClarkNVEligibleVoters$VoterID) %>%
+  summarise(matched_count = n_distinct(VoterID))
+
+print(matched_stadium_voters)  # How many stadium voters are in NVEligibleVoters
+#382	
+
+#missing that many StadiumVoters (3,830 out of 4,234)
+
+# Identify the Stadium Voters who are missing from NVEligibleVoters
+missing_stadium_voters <- StadiumVoters %>%
+  filter(!VoterID %in% ClarkNVEligibleVoters$VoterID)
+
+# Count how many are missing
+print(n_distinct(missing_stadium_voters$VoterID))  # Should be around 3,830
+#3852 missing
+
+# View first few missing voter IDs
+print(head(missing_stadium_voters$VoterID, 10))
+
+
+
+
+
+# Identify the Stadium Voters who are missing from NVEligibleVoters
+missing_stadium_voters <- StadiumVoters %>%
+  filter(!VoterID %in% ClarkNVEligibleVoters$VoterID)
+
+# Count how many are missing
+print(n_distinct(missing_stadium_voters$VoterID))  # Should be around 3,830
+#3852
+
+# View first few missing voter IDs
+print(head(missing_stadium_voters$VoterID, 10))
+
+
+# Load the full Nevada voter file (without filtering for Clark County)
+NVFullVoterList <- read_csv("VoterList.63884.013125094408/VoterList.ElgbVtr.63884.013125094408.csv")
+
+# Convert VoterID to character
+NVFullVoterList <- NVFullVoterList %>%
+  mutate(VoterID = as.character(VoterID))
+
+
+# Find where the missing stadium voters are in the full NV voter list
+missing_voters_in_nv <- NVFullVoterList %>%
+  filter(VoterID %in% missing_stadium_voters$VoterID) %>%
+  select(VoterID, `Residential County`)
+
+
+# Count missing stadium voters by county
+county_counts <- missing_voters_in_nv %>%
+  group_by(`Residential County`) %>%
+  summarise(count = n())
+
+print(county_counts)
+#Carson City	3			
+#Douglas	4			
+#Washoe	15
+
+# Convert VoterID to character in NVVoteHistory
+NVVoteHistory <- NVVoteHistory %>%
+  mutate(VoterID = as.character(VoterID))
+
+# Find how many missing stadium voters exist in NVVoteHistory
+missing_voters_in_history <- missing_stadium_voters %>%
+  filter(VoterID %in% NVVoteHistory$VoterID)
+
+# Count how many missing stadium voters are in the vote history
+print(n_distinct(missing_voters_in_history$VoterID))  # How many missing voters are in the vote history
+#22
+
+# Get the election history for missing stadium voters
+missing_voters_history_details <- NVVoteHistory %>%
+  filter(VoterID %in% missing_stadium_voters$VoterID) %>%
+  select(VoterID, `Election Date`, `Vote Code`)
+
+# View a sample of their vote history
+print(head(missing_voters_history_details, 10))
+
+
+
+
+###final check
+
+# Count total unique voter IDs in StadiumVoters
+total_stadium_voters <- n_distinct(StadiumVoters$VoterID)
+print(paste("Total unique Stadium Voters:", total_stadium_voters))
+#Total unique Stadium Voters: 4234
+
+# Count Stadium Voters that exist in NVEligibleVoters
+matched_in_eligible_voters <- StadiumVoters %>%
+  filter(VoterID %in% NVFullVoterList$VoterID) %>%
+  summarise(matched_count = n_distinct(VoterID))
+
+print(paste("Stadium Voters found in NVEligibleVoters:", matched_in_eligible_voters$matched_count))
+#Stadium Voters found in NVEligibleVoters: 404
+
+# Count Stadium Voters that exist in NVVoteHistory
+matched_in_vote_history <- StadiumVoters %>%
+  filter(VoterID %in% NVVoteHistory$VoterID) %>%
+  summarise(matched_count = n_distinct(VoterID))
+
+print(paste("Stadium Voters found in NVVoteHistory:", matched_in_vote_history$matched_count))
+#Stadium Voters found in NVVoteHistory: 386
+
+
+```
+

@@ -13,7 +13,33 @@ library(readr)
 library(tidyr)
 library(data.table)
 library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
 
+
+ClarkCountyVoterwithAllegiant <- read_csv("ClarkCountyVoterwithAllegiant.csv")
+
+
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiant %>%
+  clean_names()
+
+
+ClarkCountyVoterwithAllegiantUnique <- read_csv("ClarkCountyVotersUnique.csv")
+
+
+#write.csv(AllregisteredClarkAllegiant, file = "AllregisteredClarkAllegiant.csv", row.names = FALSE)
+
+AllregisteredClarkAllegiant <- read_csv("AllregisteredClarkAllegiant.csv")
+
+
+
+
+AllregisteredClarkAllegiant_unique <- read_csv("AllregisteredClarkAllegiantUnique.csv")
+```
+
+
+```{r}
 NVEligibleVoters <- read_csv("VoterList.63884.013125094408/VoterList.ElgbVtr.63884.013125094408.csv")
 NVVoteHistory <- read_csv("VoterList.63884.013125094408/VoterList.VtHst.63884.013125094408.csv")
 StadiumVoters <- read_excel("AllegiantVotes_2024GeneralElection_VoterIDs (1).xlsx")
@@ -30,6 +56,7 @@ colnames(StadiumVoters)
 
 ClarkCountyVoters <- NVEligibleVoters %>%
   filter(`Residential County` == "Clark")
+View(ClarkCountyVoters)
 
 StadiumVoters <- StadiumVoters %>%
   mutate(Allegiant_Voter = "Yes")
@@ -45,7 +72,37 @@ ClarkCountyVoteHistory <- NVVoteHistory %>%
 #View(ClarkCountyVoteHistory)
 
 
+
+
 #write.csv(ClarkCountyVoteHistory, "ClarkCountyVoteHistory.csv", row.names = FALSE)
+
+
+table(ClarkCountyVoterwithAllegiant$`Birth Date`)
+sum(is.na(df$birth_date))
+
+
+
+
+
+library(dplyr)
+
+# Count unique voter IDs in StadiumVoters dataset
+unique_voter_count <- StadiumVoters %>%
+  summarise(unique_voters = n_distinct(ID_Number))
+
+# Print the count
+print(unique_voter_count)
+
+# Count unique voter IDs in AllregisteredClarkAllegiant dataset
+unique_voter_count_clark <- AllregisteredClarkAllegiant %>%
+  summarise(unique_voters = n_distinct(VoterID))
+
+colnames(AllregisteredClarkAllegiant)
+
+# Print both counts
+print(unique_voter_count)
+print(unique_voter_count_clark)
+
 ```
 
 
@@ -83,13 +140,17 @@ colnames(ClarkCountyVotersandHistory)
 
 ClarkCountyVoterwithAllegiant <- ClarkCountyVotersandHistory %>%
   full_join(
-    StadiumVoters %>% select(ID_Number, Allegiant_Voter) %>% rename(VoterID = ID_Number),
+    StadiumVoters %>% select(VoterID, Allegiant_Voter),
     by = "VoterID"
   ) %>%
   mutate(Allegiant_Voter = replace_na(Allegiant_Voter, "No"))  # Ensures non-stadium voters are marked "No"
 
 colnames(ClarkCountyVoterwithAllegiant)
 
+table(ClarkCountyVoterwithAllegiant$Allegiant_Voter)
+
+CrossTable(ClarkCountyVoterwithAllegiant$Party, ClarkCountyVoterwithAllegiant$Allegiant_Voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
 
 
 fwrite(ClarkCountyVoterwithAllegiant, "ClarkCountyVoterwithAllegiant.csv", row.names = FALSE)
@@ -102,6 +163,7 @@ ClarkCountyVoterwithAllegiant <- read_csv("ClarkCountyVoterwithAllegiant.csv")
 summary(ClarkCountyVoterwithAllegiant$`Birth Date`)
 glimpse(ClarkCountyVoterwithAllegiant$`Birth Date`)
 
+sum(is.na(ClarkCountyVoterwithAllegiant$`Birth Date`))
 ```
 clark county voting amounts
 1	300256			
@@ -119,9 +181,7 @@ clark county voting amounts
 
 ClarkCountyVoterwithAllegiant <- read_csv("ClarkCountyVoterwithAllegiant.csv")
 
-library(lubridate)
-library(dplyr)
-library(janitor)
+
 ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiant %>%
   clean_names()
 colnames(ClarkCountyVoterwithAllegiantnames)
@@ -192,6 +252,20 @@ print(round(crosstabageallegiant_percent_row, 1))
   No   20.4  19.1  16.2  15.1  14.2  10.4  4.7
   Yes   0.0  11.3  16.0  22.0  25.4  14.4 11.0
 
+                                                          | ClarkCountyVoterwithAllegiantnames_unique$age_group 
+ClarkCountyVoterwithAllegiantnames_unique$allegiant_voter |     18-29 |     30-39 |     40-49 |     50-59 |     60-69 |     70-79 |       80+ | Row Total | 
+----------------------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+                                                       No |    335571 |    313484 |    265096 |    247904 |    232687 |    169922 |     76761 |   1641425 | 
+                                                          |     0.204 |     0.191 |     0.162 |     0.151 |     0.142 |     0.104 |     0.047 |     1.000 | 
+                                                          |     1.000 |     1.000 |     1.000 |     1.000 |     1.000 |     1.000 |     0.999 |           | 
+----------------------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+                                                      Yes |         0 |        43 |        61 |        84 |        97 |        55 |        42 |       382 | 
+                                                          |     0.000 |     0.113 |     0.160 |     0.220 |     0.254 |     0.144 |     0.110 |     0.000 | 
+                                                          |     0.000 |     0.000 |     0.000 |     0.000 |     0.000 |     0.000 |     0.001 |           | 
+----------------------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+                                             Column Total |    335571 |    313527 |    265157 |    247988 |    232784 |    169977 |     76803 |   1641807 | 
+                                                          |     0.204 |     0.191 |     0.162 |     0.151 |     0.142 |     0.104 |     0.047 |           | 
+----------------------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
 
 
 
@@ -233,7 +307,21 @@ crosstabparty_percent_row <- prop.table(crosstabparty, margin = 1) * 100
 print(round(crosstabparty_percent_row, 1))
 
 
+CrossTable(ClarkCountyVoterwithAllegiantnames$allegiant_voter, 
+           ClarkCountyVoterwithAllegiantnames$party, 
+           prop.chisq = FALSE,  # Remove chi-square test
+           prop.t = FALSE,      # Hide total proportions
+           prop.r = TRUE,       # Show row-wise percentages
+           prop.c = FALSE)      # Hide column-wise percentages
 
+
+
+CrossTable(ClarkCountyVoterwithAllegiantnames$allegiant_voter, 
+           ClarkCountyVoterwithAllegiantnames$age_group, 
+           prop.chisq = FALSE,  # Remove chi-square test
+           prop.t = FALSE,      # Hide total proportions
+           prop.r = TRUE,       # Show row-wise percentages
+           prop.c = FALSE)      # Hide column-wise percentages
 
 ```
 
@@ -249,6 +337,17 @@ partisanship percentages
       No Labels Nevada Non-Partisan Other (All Others) Republican
   No               0.0         36.3                1.8       25.2
   Yes              0.0         15.7                0.8       40.6
+
+
+Allegiant 	Democrat	Republican	Non-Partisan	Independent 	Libertarian	Nevada 	Green 	Transhumanist	No Labels	Other	Row Total
+Voter                                               American              Forward  Party
+No (Count)	2,481,117	2,106,698	 1,302,560	     246,824	       34,070	    78    	4,067       	5    	948	    81,917	6,258,284
+No (Row %)	39.6%	      33.7%	    20.8%	         3.9%	           0.5%	      0.0%   	0.1%	        0.0%	0.0%	    1.3%	100%
+Yes (Count)	1,293	     1,364     	354	            112	            0	        0	      0	             0    	0	        7	  3,130
+Yes (Row %)	41.3%	    43.6%	     11.3%	          3.6%         	0.0%	     0.0%   	0.0%         	0.0%	0.0%    	0.2%	100%
+Total      2,482,410	2,108,062	1,302,914	       246,936	    34,070	       78	   4,067        	5	     948	   81,924	6,261,414
+
+
 
 Of stadium voters who gave their age
  age_group   n percent
@@ -289,6 +388,700 @@ ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
 # Check how many first-time voters exist in November 2024
 table(ClarkCountyVoterwithAllegiantnames$first_time_voter_nov2024)
 
+colnames(ClarkCountyVoterwithAllegiantnames)
+View(ClarkCountyVoterwithAllegiantnames)
+str(ClarkCountyVoterwithAllegiantnames$election_date)
+
+
+
+library(lubridate)
+library(dplyr)
+
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  mutate(election_date = mdy(election_date)) 
+
+
+# Get first vote per voter using distinct (faster than group_by)
+first_votes <- ClarkCountyVoterwithAllegiantnames %>%
+  arrange(voter_id, election_date) %>%  # Sort to ensure first vote is first
+  distinct(voter_id, .keep_all = TRUE) %>%  # Keep only the first appearance of each voter_id
+  select(voter_id, election_date)  # Keep only necessary columns
+
+# Mark first-time voters in November 2024
+first_votes <- first_votes %>%
+  mutate(first_time_voter_nov2024 = ifelse(format(election_date, "%Y-%m") == "2024-11", 1, 0))
+
+# Merge back with original dataset
+ClarkCountyVoterwithAllegiantnames <- left_join(ClarkCountyVoterwithAllegiantnames, first_votes, by = "voter_id")
+
+# Check result
+table(ClarkCountyVoterwithAllegiantnames$first_time_voter_nov2024)
+
+crosstab_first_time_allegiant <- table(ClarkCountyVoterwithAllegiantnames$first_time_voter_nov2024, 
+                                       ClarkCountyVoterwithAllegiantnames$allegiant_voter)
+
+# View raw counts
+print(crosstab_first_time_allegiant)
+
+crosstab_row_percent <- prop.table(crosstab_first_time_allegiant, margin = 1) * 100
+print(round(crosstab_row_percent, 1))
+
+library(gmodels)
+
+CrossTable(ClarkCountyVoterwithAllegiantnames$allegiant_voter, 
+           ClarkCountyVoterwithAllegiantnames$first_time_voter_nov2024, 
+           prop.chisq = FALSE,  # Remove chi-square test
+           prop.t = FALSE,      # Hide total proportions
+           prop.r = TRUE,       # Show row-wise percentages
+           prop.c = FALSE)      # Hide column-wise percentages
+
+```
+First time Voters
+
+allegiant (yes) 
+first time voting in november 2024 (1)
+
+       No     Yes
+  0 5656685    3109
+  1  206343       3
+  
+  percentages
+       No   Yes
+  0  99.9   0.1
+  1 100.0   0.0
+  
+                                                          First time voter
+
+                                                          0           1
+
+                                                 No |   5656685 |    206343 |   5863028 | 
+        allegiantvoter                               |     0.965 |     0.035 |     0.999 | 
+---------------------------------------------------|-----------|-----------|-----------|
+                                               Yes |      3109 |         3 |      3112 | 
+                                                   |     0.999 |     0.001 |     0.001 | 
+---------------------------------------------------|-----------|-----------|-----------|
+                                      Column Total |   5659794 |    206346 |   5866140 | 
+                                      
+                                      
+                                      
+                                      
+                                      
+```{r vote code}
+
+glimpse(ClarkCountyVoterwithAllegiantnames$vote_code)
+table(ClarkCountyVoterwithAllegiantnames$vote_code)
+
+
+CrossTable(ClarkCountyVoterwithAllegiantnames$allegiant_voter, 
+           ClarkCountyVoterwithAllegiantnames$vote_code, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  mutate(voted_nov2024 = ifelse(format(election_date.x, "%Y-%m") == "2024-11", 1, 0))
+
+# Check if it worked
+table(ClarkCountyVoterwithAllegiantnames$voted_nov2024)
+
+
+
+CrossTable(ClarkCountyVoterwithAllegiantnames$allegiant_voter, 
+           ClarkCountyVoterwithAllegiantnames$voted_nov2024, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+colnames(ClarkCountyVoterwithAllegiantnames)
+# Count the number of unique elections each voter has participated in
+ClarkCountyVoterwithAllegiantnames <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  mutate(total_votes = n_distinct(election_date)) %>%
+  ungroup()
+
+# Check distribution of vote counts
+table(ClarkCountyVoterwithAllegiantnames$total_votes)
+
+CrossTable(ClarkCountyVoterwithAllegiantnames$total_votes, 
+           ClarkCountyVoterwithAllegiantnames$allegiant_voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+length(unique(ClarkCountyVoterwithAllegiantnames$voter_id))
+1645988/6265266
+#0.2627164
+
+
+distinct_voters <- ClarkCountyVoterwithAllegiantnames %>%
+  group_by(voter_id) %>%
+  summarise(allegiant_voter = first(allegiant_voter),
+            total_votes = first(total_votes))  # Use first() to ensure each voter is counted once
+CrossTable(distinct_voters$total_votes, distinct_voters$allegiant_voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+table(distinct_voters$allegiant_voter)
+
+regressiontotalvotes <- lm(total_votes ~ allegiant_voter, data = ClarkCountyVoterwithAllegiantnames)
+summary(regressiontotalvotes)
+
+
 ```
 
+   Cell Contents
+|-------------------------|
+|                       N |
+|           N / Row Total |
+|           N / Col Total |
+|         N / Table Total |
+|-------------------------|
+
+ 
+Total Observations in Table:  1645988 
+
+ 
+                            | distinct_voters$allegiant_voter 
+distinct_voters$total_votes |        No |       Yes | Row Total | 
+----------------------------|-----------|-----------|-----------|
+                          1 |    695494 |      3888 |    699382 | 
+                            |     0.994 |     0.006 |     0.425 | 
+                            |     0.424 |     0.918 |           | 
+                            |     0.423 |     0.002 |           | 
+----------------------------|-----------|-----------|-----------|
+                          2 |    176469 |         7 |    176476 | 
+                            |     1.000 |     0.000 |     0.107 | 
+                            |     0.107 |     0.002 |           | 
+                            |     0.107 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                          3 |    139303 |        11 |    139314 | 
+                            |     1.000 |     0.000 |     0.085 | 
+                            |     0.085 |     0.003 |           | 
+                            |     0.085 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                          4 |    110403 |        21 |    110424 | 
+                            |     1.000 |     0.000 |     0.067 | 
+                            |     0.067 |     0.005 |           | 
+                            |     0.067 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                          5 |     98970 |        33 |     99003 | 
+                            |     1.000 |     0.000 |     0.060 | 
+                            |     0.060 |     0.008 |           | 
+                            |     0.060 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                          6 |     82839 |        27 |     82866 | 
+                            |     1.000 |     0.000 |     0.050 | 
+                            |     0.050 |     0.006 |           | 
+                            |     0.050 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                          7 |     72794 |        35 |     72829 | 
+                            |     1.000 |     0.000 |     0.044 | 
+                            |     0.044 |     0.008 |           | 
+                            |     0.044 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                          8 |     61535 |        37 |     61572 | 
+                            |     0.999 |     0.001 |     0.037 | 
+                            |     0.037 |     0.009 |           | 
+                            |     0.037 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                          9 |     47299 |        27 |     47326 | 
+                            |     0.999 |     0.001 |     0.029 | 
+                            |     0.029 |     0.006 |           | 
+                            |     0.029 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                         10 |     36750 |        25 |     36775 | 
+                            |     0.999 |     0.001 |     0.022 | 
+                            |     0.022 |     0.006 |           | 
+                            |     0.022 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                         11 |     29318 |        34 |     29352 | 
+                            |     0.999 |     0.001 |     0.018 | 
+                            |     0.018 |     0.008 |           | 
+                            |     0.018 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                         12 |     23910 |        25 |     23935 | 
+                            |     0.999 |     0.001 |     0.015 | 
+                            |     0.015 |     0.006 |           | 
+                            |     0.015 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                         13 |     20669 |        16 |     20685 | 
+                            |     0.999 |     0.001 |     0.013 | 
+                            |     0.013 |     0.004 |           | 
+                            |     0.013 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                         14 |     17554 |        15 |     17569 | 
+                            |     0.999 |     0.001 |     0.011 | 
+                            |     0.011 |     0.004 |           | 
+                            |     0.011 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                         15 |     16059 |        18 |     16077 | 
+                            |     0.999 |     0.001 |     0.010 | 
+                            |     0.010 |     0.004 |           | 
+                            |     0.010 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                         16 |     11934 |        15 |     11949 | 
+                            |     0.999 |     0.001 |     0.007 | 
+                            |     0.007 |     0.004 |           | 
+                            |     0.007 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+                         17 |       454 |         0 |       454 | 
+                            |     1.000 |     0.000 |     0.000 | 
+                            |     0.000 |     0.000 |           | 
+                            |     0.000 |     0.000 |           | 
+----------------------------|-----------|-----------|-----------|
+               Column Total |   1641754 |      4234 |   1645988 | 
+                            |     0.997 |     0.003 |           | 
+----------------------------|-----------|-----------|-----------|
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+                                                   | ClarkCountyVoterwithAllegiantnames$vote_code 
+ClarkCountyVoterwithAllegiantnames$allegiant_voter |        EV |        FW |        MB |        PP |        PV | Row Total | 
+---------------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|
+                                                No |   2485440 |       270 |   1918228 |   1378753 |     80337 |   5863028 | 
+                                                   |     0.424 |     0.000 |     0.327 |     0.235 |     0.014 |     0.999 | 
+                                                   |     0.999 |     1.000 |     1.000 |     0.999 |     1.000 |           | 
+                                                   |     0.424 |     0.000 |     0.327 |     0.235 |     0.014 |           | 
+---------------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|
+                                               Yes |      1589 |         0 |       738 |       780 |         5 |      3112 | 
+                                                   |     0.511 |     0.000 |     0.237 |     0.251 |     0.002 |     0.001 | 
+                                                   |     0.001 |     0.000 |     0.000 |     0.001 |     0.000 |           | 
+                                                   |     0.000 |     0.000 |     0.000 |     0.000 |     0.000 |           | 
+---------------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|
+                                      Column Total |   2487029 |       270 |   1918966 |   1379533 |     80342 |   5866140 | 
+                                                   |     0.424 |     0.000 |     0.327 |     0.235 |     0.014 |           | 
+---------------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|
+
+
+
+amount of times voted and allegiant voter
+| total_votes | Non-Allegiant Voter (%) | Allegiant Voter (%) |
+|-------------|-------------------------|----------------------|
+| 1           | 11.11                    | 55.69               |
+| 2           | 5.64                     | 0.20                |
+| 3           | 6.68                     | 0.47                |
+| 4           | 7.06                     | 1.20                |
+| 5           | 7.91                     | 2.36                |
+| 6           | 7.93                     | 2.32                |
+| 7           | 8.14                     | 3.51                |
+| 8           | 7.86                     | 4.24                |
+| 9           | 6.80                     | 3.48                |
+| 10          | 5.87                     | 3.58                |
+| 11          | 5.15                     | 5.36                |
+| 12          | 4.58                     | 4.30                |
+| 13          | 4.29                     | 2.98                |
+| 14          | 3.92                     | 3.01                |
+| 15          | 3.84                     | 3.87                |
+| 16          | 3.05                     | 3.44                |
+| 17          | 0.12                     | 0.00                |
+| **Total**   | **100.00**                | **100.00**          |
+
+
+
+```{r nonvoters}
+#realized that my previous join got rid of non voters
+
+# Step 1: Ensure All Voters Are Kept (Even If They Haven't Voted)
+AllregisteredClark <- ClarkCountyVoters %>%
+  left_join(ClarkCountyVoteHistory, by = "VoterID")  # Keeps all registered voters, even non-voters
+
+# Step 2: Merge with Allegiant Voter Data, Keeping All Voters
+AllregisteredClarkAllegiant <- AllregisteredClark %>%
+  left_join(
+    StadiumVoters %>% select(ID_Number, Allegiant_Voter) %>% rename(VoterID = ID_Number),
+    by = "VoterID"
+  ) %>%
+  mutate(Allegiant_Voter = replace_na(Allegiant_Voter, "No"))  # Ensure missing values are marked as "No"
+
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  clean_names()
+colnames(AllregisteredClarkAllegiant)
+
+table(is.na(AllregisteredClarkAllegiant$election_date))  # Should show TRUE for non-voters
+
+
+
+
+library(dplyr)
+
+# Count the number of times each voter has voted
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  group_by(voter_id) %>%
+  mutate(total_votes = n_distinct(election_date, na.rm = TRUE)) %>%
+  ungroup()
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(
+    voter_category = case_when(
+      allegiant_voter == "Yes" ~ "Allegiant Voter",
+      total_votes > 0 ~ "Voter",  # People who have voted at least once
+      TRUE ~ "Registered Non-Voter"
+    )
+  )
+
+
+table(AllregisteredClarkAllegiant$voter_category)
+
+CrossTable(AllregisteredClarkAllegiant$party, 
+           AllregisteredClarkAllegiant$voter_category, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(
+    birth_date = mdy(birth_date)  # Convert from character to Date format
+  )
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(
+    age = as.integer(interval(birth_date, today()) / years(1))  # Compute Age
+  )
+
+colnames(AllregisteredClarkAllegiant)
+AllregisteredClarkAllegiant_unique <- AllregisteredClarkAllegiant %>%
+  group_by(voter_id) %>%
+  slice(1) %>%  # Keep the first occurrence per voter
+  ungroup()
+
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(age_group = cut(age, 
+                         breaks = c(18, 24, 34, 44, 54, 64, 74, Inf), 
+                         labels = c("18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"),
+                         right = TRUE))  # Ensures upper bound is included in each category
+
+
+CrossTable(AllregisteredClarkAllegiant_unique$age_group, 
+           AllregisteredClarkAllegiant_unique$voter_category, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+CrossTable(AllregisteredClarkAllegiant_unique$congressional_district, 
+           AllregisteredClarkAllegiant_unique$voter_category, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+
+
+
+```
+
+
+
+
+Later analysis 
+
+To start, I'm mostly interested in differences across voting methods in 2024. But looking back at 2024 stadium voters to see how they voted previously and how that compares to non-stadium voters is also something I'd like to see.
+
+The issue with a lack of data on age is one we should try to resolve. Can you check quickly the various NV and Clark Co. websites to see if they say they restrict this? If you aren't seeing anything then please email or call the contact person.
+
+One issue is how to do the analyses. It is interesting here, it seems, to have Allegiant be a DV and IV. For example, your first table has it as an IV, telling us that Allegiant voters are much more likely than others to be first time voters. If we got the row %, Allegiant would be a DV and we'd see how being a first time voter predicts being an Allegiant voter. That is interesting too but there were so few that the percentages are all just small. But, can you run things both ways for 1st time voter, 2-4, and then 5 or more? Then, please do the same for party. I also think looking at first time and party would be very interesting. That is, what % of Allegiant voters are first time and Dem, first time and Rep, first time and something else? And then the other way too, what % of first time Dems are Allegiant (vs. non Allegiant), what % are first time Reps and Allegiant, and what % of first time others are Allegiant.
+
+A model predicting who voted at Allegiant would be great, starting as 1 = allegiant, 0 = voted another way, dropping non-voters. A multinomial logit with more categories would be good too, and there including non-voters makes sense.
+
+
+
+
+```{r age}
+#first figuring out age
+summary(ClarkCountyVoterwithAllegiant$`Birth Date`)
+glimpse(ClarkCountyVoterwithAllegiant$`Birth Date`)
+colnames(ClarkCountyVoterwithAllegiant)
+
+sum(is.na(ClarkCountyVoterwithAllegiant$`Birth Date`))
+# Create a binary variable for whether birth dates are missing
+ClarkCountyVoterwithAllegiant$has_birth_date <- ifelse(is.na(ClarkCountyVoterwithAllegiant$`Birth Date`), "No Birth Date", "Has Birth Date")
+
+# Create a crosstab of counts
+crosstab_counts <- table(ClarkCountyVoterwithAllegiant$has_birth_date, ClarkCountyVoterwithAllegiant$Allegiant_Voter)
+print("Crosstab of Counts:")
+print(crosstab_counts)
+
+# Calculate percentages (row-wise)
+crosstab_percentages <- prop.table(crosstab_counts, margin = 1) * 100
+print("Crosstab of Percentages (Row-wise):")
+print(crosstab_percentages)
+
+#                     No     Yes
+ # Has Birth Date 6258284    3130
+ # No Birth Date        0    3852
+
+colnames(ClarkCountyVoterwithAllegiantUnique)
+ClarkCountyVoterwithAllegiantUnique$has_birth_date <- ifelse(is.na(ClarkCountyVoterwithAllegiant$`Birth Date`), "No Birth Date", "Has Birth Date")
+
+
+colnames(AllregisteredClarkAllegiant)
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  clean_names()
+
+AllregisteredClarkAllegiant$has_birth_date <- ifelse(is.na(AllregisteredClarkAllegiant$birth_date), "No Birth Date", "Has Birth Date")
+
+table(AllregisteredClarkAllegiant$has_birth_date)
+
+crosstab_counts <- table(AllregisteredClarkAllegiant$has_birth_date, AllregisteredClarkAllegiant$allegiant_voter)
+print("Crosstab of Counts:")
+print(crosstab_counts)
+
+# Calculate percentages (row-wise)
+crosstab_percentages <- prop.table(crosstab_counts, margin = 1) * 100
+print("Crosstab of Percentages (Row-wise):")
+print(crosstab_percentages)
+
+glimpse(AllregisteredClarkAllegiant$birth_date )
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(birth_date = mdy(birth_date))
+
+
+# Calculate Age
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(age = as.numeric(floor(interval(start = birth_date, end = today()) / years(1))))
+
+# Define age groups
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(age_group = case_when(
+    age < 25 ~ "<25",
+    age >= 25 & age < 40 ~ "25-39",
+    age >= 40 & age < 55 ~ "40-54",
+    age >= 55 & age < 70 ~ "55-69",
+    age >= 70 ~ "70+"
+  ))
+
+
+# Summarize data
+age_summary <- AllregisteredClarkAllegiant %>%
+  group_by(age_group, allegiant_voter) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(percentage = count / sum(count) * 100)
+
+print(age_summary)
+
+
+CrossTable(AllregisteredClarkAllegiant$age_group, AllregisteredClarkAllegiant$allegiant_voter,
+           prop.r = TRUE, prop.c = TRUE, prop.t = TRUE, prop.chisq = FALSE)
+colnames(AllregisteredClarkAllegiant)
+
+# Count total allegiant voters before making unique
+allegiant_voter_count <- AllregisteredClarkAllegiant %>%
+  filter(Allegiant_Voter == "Yes") %>%
+  summarise(total_allegiant = n())
+
+print(allegiant_voter_count)
+
+# Count unique voter IDs where allegiant_voter == "Yes"
+unique_allegiant_voters <- AllregisteredClarkAllegiant %>%
+  filter(Allegiant_Voter == "Yes") %>%
+  summarise(unique_allegiant_voters = n_distinct(VoterID))
+
+print(unique_allegiant_voters)
+
+
+library(dplyr)
+
+AllregisteredClarkAllegiant_unique1 <- AllregisteredClarkAllegiant %>%
+  arrange(VoterID, desc(Allegiant_Voter)) %>%  # Sort so "Yes" comes first
+  distinct(VoterID, .keep_all = TRUE)  # Keep first occurrence (Yes preferred)
+
+# Check count again
+unique_allegiant_voter_count_fixed <- AllregisteredClarkAllegiant_unique1 %>%
+  filter(Allegiant_Voter == "Yes") %>%
+  summarise(unique_allegiant_total = n())
+
+print(unique_allegiant_voter_count_fixed)
+
+
+conflicting_voters <- AllregisteredClarkAllegiant %>%
+  group_by(VoterID) %>%
+  summarise(allegiant_status = n_distinct(Allegiant_Voter)) %>%
+  filter(allegiant_status > 1)
+
+print(nrow(conflicting_voters))  # If this is > 0, some voters switch between Yes and No
+
+# Compare fixed allegiant voter count
+fixed_unique_count <- AllregisteredClarkAllegiant_unique1 %>%
+  filter(Allegiant_Voter == "Yes") %>%
+  summarise(unique_allegiant_voters_fixed = n())
+
+print(fixed_unique_count)
+
+
+
+# Remove duplicate entries based on voter_id, keeping the first occurrence
+AllregisteredClarkAllegiant_unique <- AllregisteredClarkAllegiant %>%
+  distinct(voter_id, .keep_all = TRUE)
+
+# Check the updated dataset
+print(nrow(AllregisteredClarkAllegiant_unique))  # Number of unique voters
+
+write.csv(AllregisteredClarkAllegiant_unique, file = "AllregisteredClarkAllegiantUnique.csv", row.names = FALSE)
+
+
+CrossTable(AllregisteredClarkAllegiant_unique$age_group, AllregisteredClarkAllegiant_unique$allegiant_voter,
+           prop.r = TRUE, prop.c = TRUE, prop.t = TRUE, prop.chisq = FALSE)
+
+```
+```{r checking allegiant voters numbers}
+
+library(dplyr)
+colnames(StadiumVoters)
+colnames(AllregisteredClarkAllegiant)
+
+library(dplyr)
+
+# Convert voter ID columns to character to avoid mismatches
+StadiumVoters <- StadiumVoters %>%
+  mutate(ID_Number = as.character(ID_Number))
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(VoterID = as.character(VoterID))
+
+# Count how many StadiumVoters IDs are present in AllregisteredClarkAllegiant
+matched_voters <- StadiumVoters %>%
+  filter(ID_Number %in% AllregisteredClarkAllegiant$VoterID) %>%
+  summarise(matched_count = n_distinct(ID_Number))
+
+print(matched_voters)
+
+
+
+# Find voter IDs in StadiumVoters that are missing in AllregisteredClarkAllegiant
+missing_voter_ids <- StadiumVoters %>%
+  filter(!ID_Number %in% AllregisteredClarkAllegiant$VoterID)
+
+# Count how many are missing
+missing_count <- n_distinct(missing_voter_ids$ID_Number)
+print(missing_count)
+
+# View some missing voter IDs
+print(head(missing_voter_ids$ID_Number, 10))
+
+
+# Count unique voter IDs where Allegiant_Voter == "Yes"
+unique_allegiant_voters_stadium <- StadiumVoters %>%
+  filter(Allegiant_Voter == "Yes") %>%
+  summarise(unique_count = n_distinct(ID_Number))
+
+print(unique_allegiant_voters_stadium)
+
+
+# Check voter ID formats
+str(StadiumVoters$ID_Number)
+str(AllregisteredClarkAllegiant$VoterID)
+
+# Example of first 10 IDs in each dataset
+print(head(StadiumVoters$ID_Number, 10))
+print(head(AllregisteredClarkAllegiant$VoterID, 10))
+
+
+StadiumVoters <- StadiumVoters %>%
+  mutate(ID_Number = as.character(ID_Number))
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(VoterID = as.character(VoterID))
+
+# Standardize voter IDs by padding with zeros to match the length
+StadiumVoters <- StadiumVoters %>%
+  mutate(ID_Number = sprintf("%07d", as.numeric(ID_Number)))  # Adjust padding as needed
+
+AllregisteredClarkAllegiant <- AllregisteredClarkAllegiant %>%
+  mutate(VoterID = sprintf("%07d", as.numeric(VoterID)))  # Adjust padding as needed
+
+
+matched_voters <- StadiumVoters %>%
+  filter(ID_Number %in% AllregisteredClarkAllegiant$VoterID) %>%
+  summarise(matched_count = n_distinct(ID_Number))
+
+print(matched_voters)
+
+
+# Find missing voter IDs from StadiumVoters
+missing_voter_ids <- StadiumVoters %>%
+  filter(!ID_Number %in% AllregisteredClarkAllegiant$VoterID)
+
+# Count missing voter IDs
+print(n_distinct(missing_voter_ids$ID_Number))
+
+# Show some missing voter IDs
+print(head(missing_voter_ids$ID_Number, 10))
+
+colnames(missing_voter_ids)
+# Check if missing voter IDs exist in VoteHistory (if available)
+missing_voters_in_votehistory <- missing_voter_ids %>%
+  filter(ID_Number %in% ClarkCountyVoteHistory$VoterID)  # Adjust this if VoteHistory uses a different column name
+
+print(n_distinct(missing_voters_in_votehistory$ID_Number))
+
+```
+   Cell Contents
+|-------------------------|
+|                       N |
+|           N / Row Total |
+|           N / Col Total |
+|         N / Table Total |
+|-------------------------|
+
+ 
+Total Observations in Table:  6261414 
+
+ 
+                                      | AllregisteredClarkAllegiant$allegiant_voter 
+AllregisteredClarkAllegiant$age_group |        No |       Yes | Row Total | 
+--------------------------------------|-----------|-----------|-----------|
+                                  <25 |    251443 |         0 |    251443 | 
+                                      |     1.000 |     0.000 |     0.040 | 
+                                      |     0.040 |     0.000 |           | 
+                                      |     0.040 |     0.000 |           | 
+--------------------------------------|-----------|-----------|-----------|
+                                25-39 |   1074672 |       194 |   1074866 | 
+                                      |     1.000 |     0.000 |     0.172 | 
+                                      |     0.172 |     0.062 |           | 
+                                      |     0.172 |     0.000 |           | 
+--------------------------------------|-----------|-----------|-----------|
+                                40-54 |   1420020 |       645 |   1420665 | 
+                                      |     1.000 |     0.000 |     0.227 | 
+                                      |     0.227 |     0.206 |           | 
+                                      |     0.227 |     0.000 |           | 
+--------------------------------------|-----------|-----------|-----------|
+                                55-69 |   1793112 |      1304 |   1794416 | 
+                                      |     0.999 |     0.001 |     0.287 | 
+                                      |     0.287 |     0.417 |           | 
+                                      |     0.286 |     0.000 |           | 
+--------------------------------------|-----------|-----------|-----------|
+                                  70+ |   1719037 |       987 |   1720024 | 
+                                      |     0.999 |     0.001 |     0.275 | 
+                                      |     0.275 |     0.315 |           | 
+                                      |     0.275 |     0.000 |           | 
+--------------------------------------|-----------|-----------|-----------|
+                         Column Total |   6258284 |      3130 |   6261414 | 
+                                      |     1.000 |     0.000 |           | 
+--------------------------------------|-----------|-----------|-----------|
+
+
+
+
+```{r voting method habits}
+
+colnames(AllregisteredClarkAllegiant)
+colnames(ClarkCountyVoterwithAllegiantnames)
+summary(nchar(ClarkCountyVoterwithAllegiantnames$voter_id))
+summary(nchar(StadiumVoters$VoterID))
+
+
+print(n_distinct(NVEligibleVoters$VoterID))  # Total unique voters in NVEligibleVoters
+print(n_distinct(ClarkCountyVoterwithAllegiantnames$voter_id))  # Unique voters in current dataset
+print(n_distinct(StadiumVoters$VoterID))  # Unique Allegiant Voters
+
+# Count how many Stadium Voters exist in NVEligibleVoters
+matched_in_eligible_voters <- NVEligibleVoters %>%
+  filter(VoterID %in% StadiumVoters$VoterID) %>%
+  summarise(matched_count = n_distinct(VoterID))
+
+print(matched_in_eligible_voters$matched_count)
+
+
+# Count how many Stadium Voters exist in ClarkCountyVoterwithAllegiantnames
+matched_in_current_dataset <- ClarkCountyVoterwithAllegiantnames %>%
+  filter(voter_id %in% StadiumVoters$VoterID) %>%
+  summarise(matched_count = n_distinct(voter_id))
+
+print(matched_in_current_dataset$matched_count)
+
+
+```
