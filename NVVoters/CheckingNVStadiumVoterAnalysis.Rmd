@@ -37,6 +37,7 @@ colnames(ClarkNVEligibleVoters)
 colnames(NVVoteHistory)
 colnames(StadiumVoters)
 
+View(NVEligibleVoters)
 
 
 # Convert VoterID to character in all datasets

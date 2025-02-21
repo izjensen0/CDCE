@@ -41,17 +41,17 @@ ClarkVoterIDs <- ClarkCountyVoters %>%
   select(VoterID)
 
 ClarkCountyVoteHistory <- NVVoteHistory %>%
-  filter(VoterID %in% ClarkVoterIDs$VoterID)  # Keeps only voters from Clark County but doesn't remove those with no history
+  filter(VoterID %in% ClarkVoterIDs$VoterID) 
 
 ClarkCountyVotersandHistory <- ClarkCountyVoters %>%
-  left_join(ClarkCountyVoteHistory, by = "VoterID")  # Preserves all Clark County voters
+  left_join(ClarkCountyVoteHistory, by = "VoterID")  
 
 ClarkCountyVoterwithAllegiant <- ClarkCountyVotersandHistory %>%
   full_join(
     StadiumVoters %>%
       select(VoterID, Allegiant_Voter)
   ) %>%
-  mutate(Allegiant_Voter = replace_na(Allegiant_Voter, "No"))  # Ensures non-stadium voters are marked "No"
+  mutate(Allegiant_Voter = replace_na(Allegiant_Voter, "No")) 
 
 
 table(ClarkCountyVoterwithAllegiant$Allegiant_Voter)
@@ -66,7 +66,6 @@ colnames(ClarkCountyVoterwithAllegiant)
 CrossTable(ClarkCountyVoterwithAllegiant$Has_Voted, ClarkCountyVoterwithAllegiant$Allegiant_Voter, 
            prop.chisq = FALSE, prop.r = TRUE)
 
-library(dplyr)
 
 
 
