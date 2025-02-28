@@ -175,3 +175,121 @@ table(ClarkCountyVoterwithAllegiant$Allegiant_Voter)
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+````{r extra from other rmd}
+ClarkCountyVoteHistory <- NVVoteHistory %>%
+  filter(VoterID %in% ClarkVoterIDs$VoterID) 
+
+ClarkCountyVotersandHistory <- ClarkCountyVoters %>%
+  left_join(ClarkCountyVoteHistory, by = "VoterID")  
+
+ClarkCountyVoterwithAllegiant <- ClarkCountyVotersandHistory %>%
+  full_join(
+    StadiumVoters %>%
+      select(VoterID, Allegiant_Voter)
+  ) %>%
+  mutate(Allegiant_Voter = replace_na(Allegiant_Voter, "No")) 
+
+
+table(ClarkCountyVoterwithAllegiant$Allegiant_Voter)
+
+ClarkCountyVoterwithAllegiant <- ClarkCountyVoterwithAllegiant %>%
+  mutate(Has_Voted = ifelse(VoterID %in% NVVoteHistory$VoterID, "Yes", "No"))
+
+
+table(ClarkCountyVoterwithAllegiant$Has_Voted)
+colnames(ClarkCountyVoterwithAllegiant)
+
+CrossTable(ClarkCountyVoterwithAllegiant$Has_Voted, ClarkCountyVoterwithAllegiant$Allegiant_Voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+
+
+
+ClarkCountyVoterUnique <- ClarkCountyVoterwithAllegiant %>%
+  distinct(VoterID, .keep_all = TRUE)
+table(ClarkCountyVoterUnique$Has_Voted)
+table(ClarkCountyVoterUnique$Allegiant_Voter)
+CrossTable(ClarkCountyVoterUnique$Has_Voted, ClarkCountyVoterUnique$Allegiant_Voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+CrossTable(ClarkCountyVoterUnique$Party, ClarkCountyVoterUnique$Allegiant_Voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+#didnt work fully 
+#only 382 has party for allegiant
+
+
+
+
+
+
+
+
+
+
+
+VoterVoteCounts <- ClarkCountyVoterwithAllegiant %>%
+  group_by(VoterID) %>%
+  summarise(total_votes = n_distinct(`Election Date`), .groups = "drop")  # Count unique election dates per voter
+ClarkCountyVoterwithAllegiant <- ClarkCountyVoterwithAllegiant %>%
+  mutate(total_votes = VoterVoteCounts$total_votes[match(VoterID, VoterVoteCounts$VoterID)]) %>%
+  mutate(total_votes = replace_na(total_votes, 0))  # Replace NAs with 0 (for voters with no recorded votes)
+summary(ClarkCountyVoterwithAllegiant$total_votes)  # View distribution of total votes
+table(ClarkCountyVoterwithAllegiant$total_votes)   # See how many voters fall into each category
+
+CrossTable(ClarkCountyVoterwithAllegiant$total_votes, 
+           ClarkCountyVoterwithAllegiant$Allegiant_Voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+table(ClarkCountyVoterwithAllegiant$Has_Voted)
+
+colnames(ClarkCountyVoterwithAllegiant)
+
+
+
+
+distinct_voters <- ClarkCountyVoterwithAllegiant %>%
+  group_by(VoterID) %>%
+  summarise(allegiant_voter = first(Allegiant_Voter),
+            total_votes = first(total_votes))  # Use first() to ensure each voter is counted once
+
+distinct_voters <- ClarkCountyVoterwithAllegiant %>%
+  group_by(VoterID) %>%
+  slice(1) %>%  # Keeps only the first row for each voter while preserving all columns
+  ungroup()
+
+colnames(distinct_voters)
+
+CrossTable(distinct_voters$total_votes, distinct_voters$Allegiant_Voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+CrossTable(distinct_voters$Party, distinct_voters$Allegiant_Voter, 
+           prop.chisq = FALSE, prop.r = TRUE)
+
+
+write.csv(ClarkCountyVoterwithAllegiant, "ClarkCountyVoterwithAllegiant.csv", row.names = FALSE)
+
+write.csv(distinct_voters, "distinct_voters.csv", row.names = FALSE)
+
+
+allegiant_summary <- ClarkCountyVoterwithAllegiant %>%
+  filter(Allegiant_Voter == "Yes") %>%  # Only keep Allegiant voters
+  summarise(across(everything(), ~ sum(!is.na(.)), .names = "non_missing_{.col}"))
+
+print(allegiant_summary)
+#3130 for most
+
+uniqueallegiant_summary <- distinct_voters %>%
+  filter(Allegiant_Voter == "Yes") %>%  # Only keep Allegiant vot2ers
+  summarise(across(everything(), ~ sum(!is.na(.)), .names = "non_missing_{.col}"))
+
+print(uniqueallegiant_summary)
+#382 for most of them 
+
+
+
+
+
+
+```

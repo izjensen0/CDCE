@@ -16,149 +16,2166 @@ library(knitr)
 library(lubridate)
 library(janitor)
 library(gmodels)
+library(gt)
+library(kableExtra)
+library(ggplot2)
 
+#rm(list = ls())
 
 ```
 
 
-```{r cars}
+```{r just eligible}
 
 NVEligibleVoters <- read_csv("VoterList.63884.013125094408/VoterList.ElgbVtr.63884.013125094408.csv") 
-
-NVVoteHistory <- read_csv("VoterList.63884.013125094408/VoterList.VtHst.63884.013125094408.csv")  # Load vote history later
-
-StadiumVoters <- read_excel("AllegiantVotes_2024GeneralElection_VoterIDs (1).xlsx") %>%
-  rename(VoterID = ID_Number)  # Standardize column name for merging
-
+View(NVEligibleVoters)
 
 ClarkCountyVoters <- NVEligibleVoters %>%
   filter(`Residential County` == "Clark")
+colnames(ClarkCountyVoters)
+
+
+StadiumVoters <- read_excel("AllegiantVotes_2024GeneralElection_VoterIDs (1).xlsx") %>%
+  rename(CountyVoterID = ID_Number)  # Standardize column name for merging
+
 
 StadiumVoters <- StadiumVoters %>%
   mutate(Allegiant_Voter = "Yes")
-
-ClarkVoterIDs <- ClarkCountyVoters %>%
-  select(VoterID)
-
-ClarkCountyVoteHistory <- NVVoteHistory %>%
-  filter(VoterID %in% ClarkVoterIDs$VoterID) 
-
-ClarkCountyVotersandHistory <- ClarkCountyVoters %>%
-  left_join(ClarkCountyVoteHistory, by = "VoterID")  
-
-ClarkCountyVoterwithAllegiant <- ClarkCountyVotersandHistory %>%
-  full_join(
-    StadiumVoters %>%
-      select(VoterID, Allegiant_Voter)
-  ) %>%
-  mutate(Allegiant_Voter = replace_na(Allegiant_Voter, "No")) 
+colnames(StadiumVoters)
 
 
-table(ClarkCountyVoterwithAllegiant$Allegiant_Voter)
+StadiumVoters <- StadiumVoters %>%
+  mutate(CountyVoterID = as.character(CountyVoterID))
 
-ClarkCountyVoterwithAllegiant <- ClarkCountyVoterwithAllegiant %>%
-  mutate(Has_Voted = ifelse(VoterID %in% NVVoteHistory$VoterID, "Yes", "No"))
+ClarkEligibleStadium <- left_join(ClarkCountyVoters, StadiumVoters, by = c("County Voter ID" = "CountyVoterID"))
+
+ClarkEligibleStadium <- ClarkEligibleStadium %>%
+  mutate(Allegiant_Voter = case_when(
+    Allegiant_Voter == "Yes" ~ "Yes",  # Keep "Yes" as is
+    TRUE ~ "No"  # Replace everything else (including NA) with "No"
+  ))
+
+# Check the result
+table(ClarkEligibleStadium$Allegiant_Voter)
 
 
-table(ClarkCountyVoterwithAllegiant$Has_Voted)
-colnames(ClarkCountyVoterwithAllegiant)
 
-CrossTable(ClarkCountyVoterwithAllegiant$Has_Voted, ClarkCountyVoterwithAllegiant$Allegiant_Voter, 
+ClarkEligibleStadium <- ClarkEligibleStadium %>%
+  clean_names()
+colnames(ClarkEligibleStadium)
+
+CrossTable(ClarkEligibleStadium$party, 
+           ClarkEligibleStadium$allegiant_voter, 
            prop.chisq = FALSE, prop.r = TRUE)
 
 
+glimpse(ClarkEligibleStadium$birth_date)
 
 
+ClarkEligibleStadium <- ClarkEligibleStadium %>%
+  mutate(
+    birth_date = mdy(birth_date)  
+  )
 
-ClarkCountyVoterUnique <- ClarkCountyVoterwithAllegiant %>%
-  distinct(VoterID, .keep_all = TRUE)
-table(ClarkCountyVoterUnique$Has_Voted)
-table(ClarkCountyVoterUnique$Allegiant_Voter)
-CrossTable(ClarkCountyVoterUnique$Has_Voted, ClarkCountyVoterUnique$Allegiant_Voter, 
+ClarkEligibleStadium <- ClarkEligibleStadium %>%
+  mutate(
+    age = as.integer(interval(birth_date, today()) / years(1))  
+  )
+
+ClarkEligibleStadium <- ClarkEligibleStadium %>%
+  mutate(age_group = cut(age, 
+                         breaks = c(18, 25, 35, 45, 55, 65, 75, Inf), 
+                         labels = c("18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"), 
+                         right = FALSE))
+
+# Check the result
+table(ClarkEligibleStadium$age_group)
+
+
+CrossTable(ClarkEligibleStadium$age_group, 
+           ClarkEligibleStadium$allegiant_voter, 
            prop.chisq = FALSE, prop.r = TRUE)
-
-CrossTable(ClarkCountyVoterUnique$Party, ClarkCountyVoterUnique$Allegiant_Voter, 
-           prop.chisq = FALSE, prop.r = TRUE)
-
-#didnt work fully 
-#only 382 has party for allegiant
-
-
-
-
-
-
-
-
-
-
-
-VoterVoteCounts <- ClarkCountyVoterwithAllegiant %>%
-  group_by(VoterID) %>%
-  summarise(total_votes = n_distinct(`Election Date`), .groups = "drop")  # Count unique election dates per voter
-ClarkCountyVoterwithAllegiant <- ClarkCountyVoterwithAllegiant %>%
-  mutate(total_votes = VoterVoteCounts$total_votes[match(VoterID, VoterVoteCounts$VoterID)]) %>%
-  mutate(total_votes = replace_na(total_votes, 0))  # Replace NAs with 0 (for voters with no recorded votes)
-summary(ClarkCountyVoterwithAllegiant$total_votes)  # View distribution of total votes
-table(ClarkCountyVoterwithAllegiant$total_votes)   # See how many voters fall into each category
-
-CrossTable(ClarkCountyVoterwithAllegiant$total_votes, 
-           ClarkCountyVoterwithAllegiant$Allegiant_Voter, 
-           prop.chisq = FALSE, prop.r = TRUE)
-
-table(ClarkCountyVoterwithAllegiant$Has_Voted)
-
-colnames(ClarkCountyVoterwithAllegiant)
-
-
-
-
-distinct_voters <- ClarkCountyVoterwithAllegiant %>%
-  group_by(VoterID) %>%
-  summarise(allegiant_voter = first(Allegiant_Voter),
-            total_votes = first(total_votes))  # Use first() to ensure each voter is counted once
-
-distinct_voters <- ClarkCountyVoterwithAllegiant %>%
-  group_by(VoterID) %>%
-  slice(1) %>%  # Keeps only the first row for each voter while preserving all columns
-  ungroup()
-
-colnames(distinct_voters)
-
-CrossTable(distinct_voters$total_votes, distinct_voters$Allegiant_Voter, 
-           prop.chisq = FALSE, prop.r = TRUE)
-
-CrossTable(distinct_voters$Party, distinct_voters$Allegiant_Voter, 
-           prop.chisq = FALSE, prop.r = TRUE)
-
-
-write.csv(ClarkCountyVoterwithAllegiant, "ClarkCountyVoterwithAllegiant.csv", row.names = FALSE)
-
-write.csv(distinct_voters, "distinct_voters.csv", row.names = FALSE)
-
-
-allegiant_summary <- ClarkCountyVoterwithAllegiant %>%
-  filter(Allegiant_Voter == "Yes") %>%  # Only keep Allegiant voters
-  summarise(across(everything(), ~ sum(!is.na(.)), .names = "non_missing_{.col}"))
-
-print(allegiant_summary)
-#3130 for most
-
-uniqueallegiant_summary <- distinct_voters %>%
-  filter(Allegiant_Voter == "Yes") %>%  # Only keep Allegiant vot2ers
-  summarise(across(everything(), ~ sum(!is.na(.)), .names = "non_missing_{.col}"))
-
-print(uniqueallegiant_summary)
-#382 for most of them 
 
 ```
 
-## Including Plots
+Cell Contents
+|-------------------------|
+|                       N |
+|           N / Row Total |
+|           N / Col Total |
+|         N / Table Total |
+|-------------------------|
 
-You can also embed plots, for example:
+ 
+Total Observations in Table:  1642136 
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+ 
+                           | ClarkEligibleStadium$allegiant_voter 
+ClarkEligibleStadium$party |        No |       Yes | Row Total | 
+---------------------------|-----------|-----------|-----------|
+                  Democrat |    515448 |      1373 |    516821 | 
+                           |     0.997 |     0.003 |     0.315 | 
+                           |     0.315 |     0.327 |           | 
+                           |     0.314 |     0.001 |           | 
+---------------------------|-----------|-----------|-----------|
+Independent American Party |     71496 |       165 |     71661 | 
+                           |     0.998 |     0.002 |     0.044 | 
+                           |     0.044 |     0.039 |           | 
+                           |     0.044 |     0.000 |           | 
+---------------------------|-----------|-----------|-----------|
+         Libertarian Party |     11577 |        42 |     11619 | 
+                           |     0.996 |     0.004 |     0.007 | 
+                           |     0.007 |     0.010 |           | 
+                           |     0.007 |     0.000 |           | 
+---------------------------|-----------|-----------|-----------|
+      Nevada Forward Party |        36 |         0 |        36 | 
+                           |     1.000 |     0.000 |     0.000 | 
+                           |     0.000 |     0.000 |           | 
+                           |     0.000 |     0.000 |           | 
+---------------------------|-----------|-----------|-----------|
+        Nevada Green Party |      1461 |         3 |      1464 | 
+                           |     0.998 |     0.002 |     0.001 | 
+                           |     0.001 |     0.001 |           | 
+                           |     0.001 |     0.000 |           | 
+---------------------------|-----------|-----------|-----------|
+Nevada Transhumanist Party |         4 |         0 |         4 | 
+                           |     1.000 |     0.000 |     0.000 | 
+                           |     0.000 |     0.000 |           | 
+                           |     0.000 |     0.000 |           | 
+---------------------------|-----------|-----------|-----------|
+          No Labels Nevada |       619 |         5 |       624 | 
+                           |     0.992 |     0.008 |     0.000 | 
+                           |     0.000 |     0.001 |           | 
+                           |     0.000 |     0.000 |           | 
+---------------------------|-----------|-----------|-----------|
+              Non-Partisan |    594759 |      1522 |    596281 | 
+                           |     0.997 |     0.003 |     0.363 | 
+                           |     0.363 |     0.362 |           | 
+                           |     0.362 |     0.001 |           | 
+---------------------------|-----------|-----------|-----------|
+        Other (All Others) |     29733 |        69 |     29802 | 
+                           |     0.998 |     0.002 |     0.018 | 
+                           |     0.018 |     0.016 |           | 
+                           |     0.018 |     0.000 |           | 
+---------------------------|-----------|-----------|-----------|
+                Republican |    412801 |      1023 |    413824 | 
+                           |     0.998 |     0.002 |     0.252 | 
+                           |     0.252 |     0.243 |           | 
+                           |     0.251 |     0.001 |           | 
+---------------------------|-----------|-----------|-----------|
+              Column Total |   1637934 |      4202 |   1642136 | 
+                           |     0.997 |     0.003 |           | 
+---------------------------|-----------|-----------|-----------|
+
+
+
+
+ Cell Contents
+|-------------------------|
+|                       N |
+|           N / Row Total |
+|           N / Col Total |
+|         N / Table Total |
+|-------------------------|
+
+ 
+Total Observations in Table:  1642136 
+
+ 
+                               | ClarkEligibleStadium$allegiant_voter 
+ClarkEligibleStadium$age_group |        No |       Yes | Row Total | 
+-------------------------------|-----------|-----------|-----------|
+                         18-24 |    183883 |       462 |    184345 | 
+                               |     0.997 |     0.003 |     0.112 | 
+                               |     0.112 |     0.110 |           | 
+                               |     0.112 |     0.000 |           | 
+-------------------------------|-----------|-----------|-----------|
+                         25-34 |    311664 |      1114 |    312778 | 
+                               |     0.996 |     0.004 |     0.190 | 
+                               |     0.190 |     0.265 |           | 
+                               |     0.190 |     0.001 |           | 
+-------------------------------|-----------|-----------|-----------|
+                         35-44 |    290601 |      1124 |    291725 | 
+                               |     0.996 |     0.004 |     0.178 | 
+                               |     0.177 |     0.267 |           | 
+                               |     0.177 |     0.001 |           | 
+-------------------------------|-----------|-----------|-----------|
+                         45-54 |    248605 |       779 |    249384 | 
+                               |     0.997 |     0.003 |     0.152 | 
+                               |     0.152 |     0.185 |           | 
+                               |     0.151 |     0.000 |           | 
+-------------------------------|-----------|-----------|-----------|
+                         55-64 |    245476 |       489 |    245965 | 
+                               |     0.998 |     0.002 |     0.150 | 
+                               |     0.150 |     0.116 |           | 
+                               |     0.149 |     0.000 |           | 
+-------------------------------|-----------|-----------|-----------|
+                         65-74 |    204309 |       192 |    204501 | 
+                               |     0.999 |     0.001 |     0.125 | 
+                               |     0.125 |     0.046 |           | 
+                               |     0.124 |     0.000 |           | 
+-------------------------------|-----------|-----------|-----------|
+                           75+ |    153396 |        42 |    153438 | 
+                               |     1.000 |     0.000 |     0.093 | 
+                               |     0.094 |     0.010 |           | 
+                               |     0.093 |     0.000 |           | 
+-------------------------------|-----------|-----------|-----------|
+                  Column Total |   1637934 |      4202 |   1642136 | 
+                               |     0.997 |     0.003 |           | 
+-------------------------------|-----------|-----------|-----------|
+
+
+
+```{r history}
+NVVoteHistory <- read_csv("VoterList.63884.013125094408/VoterList.VtHst.63884.013125094408.csv")  # Load vote history later
+
+
+
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r file mike sent}
+
+
+AllClarkCountyWide <- read_delim("ClarkCo_Nov2024 csv.csv", delim = "\t", col_types = cols(.default = "c"))
+
+glimpse(AllClarkCountyWide)
+View(AllClarkCountyWide)
+
+AllClarkCountyWide$allegiant <- ifelse(is.na(AllClarkCountyWide$allegiant), 0, 1)
+
+
+
+
+
+
+
+# Filter for those who voted in Nov 2024
+AllClarkCountyWide2024vote <- AllClarkCountyWide %>% filter(!is.na(votecode59))
+
+# Tabulate age categories by allegiant status
+table_age <- AllClarkCountyWide2024vote %>%
+  group_by(agecat, allegiant) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(percent = count / sum(count) * 100)
+
+# Display table
+table_age %>%
+  tidyr::pivot_wider(names_from = allegiant, values_from = c(count, percent))
+
+age_table <- AllClarkCountyWide2024vote %>%
+  tabyl(agecat, allegiant) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()  # Show counts and percentages
+print(age_table)
+
+
+# Summary statistics for numtimesvoted_beforeNov2024 among allegiant voters
+summary(AllClarkCountyWide2024vote$numtimesvoted_beforeNov2024[AllClarkCountyWide2024vote$allegiant == 1])
+
+# Summary statistics for numtimesvoted_beforeNov2024 among non-allegiant voters who didn't use votemethod2024 == 8
+summary(AllClarkCountyWide2024vote$numtimesvoted_beforeNov2024[AllClarkCountyWide2024vote$allegiant != 1 & AllClarkCountyWide2024vote$votemethod2024 != 8])
+
+# Tabulate numtimesvoted_beforeNov2024 by allegiant status for those who didn't use votemethod2024 == 8
+table_voting <- AllClarkCountyWide2024vote %>%
+  filter(votemethod2024 != 8) %>%
+  group_by(numtimesvoted_beforeNov2024, allegiant) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(percent = count / sum(count) * 100) %>%
+  arrange(numtimesvoted_beforeNov2024)  # Ensure sorting by the number of times voted
+
+# Display table
+table_voting %>%
+  tidyr::pivot_wider(names_from = allegiant, values_from = c(count, percent))
+
+
+
+AllClarkCountyWide2024vote <- AllClarkCountyWide2024vote %>%
+  mutate(numtimesvoted_beforeNov2024 = as.numeric(as.character(numtimesvoted_beforeNov2024)))
+
+
+
+
+votecount_table <- AllClarkCountyWide2024vote %>%
+  tabyl(numtimesvoted_beforeNov2024, allegiant) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()  # Show counts and percentages
+print(votecount_table)
+
+votecount_table <- AllClarkCountyWide %>%
+  tabyl(numtimesvoted_beforeNov2024, allegiant) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()  # Show counts and percentages
+print(votecount_table)
+
+
+
+
+```
+
+agecat                   0               1               Total
+      1   9.07%    (92,932)  11.71%   (492)   9.08%    (93,424)
+      2   6.91%    (70,793)  12.90%   (542)   6.94%    (71,335)
+      3  15.80%   (161,878)  27.46% (1,154)  15.85%   (163,032)
+      4  16.11%   (164,973)  23.11%   (971)  16.13%   (165,944)
+      5  25.74%   (263,647)  19.47%   (818)  25.71%   (264,465)
+      6  26.37%   (270,063)   5.35%   (225)  26.28%   (270,288)
+  Total 100.00% (1,024,286) 100.00% (4,202) 100.00% (1,028,488)
+
+
+
+ numtimesvoted_beforeNov2024                   0               1               Total
+                           0  20.00%   (204,859)  35.34% (1,485)  20.06%   (206,344)
+                           1  12.74%   (130,522)  20.20%   (849)  12.77%   (131,371)
+                           2  10.85%   (111,175)  11.71%   (492)  10.86%   (111,667)
+                           3   8.98%    (92,027)   8.90%   (374)   8.98%    (92,401)
+                           4   8.52%    (87,255)   7.09%   (298)   8.51%    (87,553)
+                           5   7.34%    (75,231)   4.81%   (202)   7.33%    (75,433)
+                           6   6.62%    (67,797)   3.97%   (167)   6.61%    (67,964)
+                           7   5.69%    (58,313)   2.71%   (114)   5.68%    (58,427)
+                           8   4.40%    (45,111)   1.55%    (65)   4.39%    (45,176)
+                           9   3.43%    (35,136)   0.98%    (41)   3.42%    (35,177)
+                          10   2.75%    (28,118)   0.81%    (34)   2.74%    (28,152)
+                          11   2.25%    (23,058)   0.50%    (21)   2.24%    (23,079)
+                          12   1.95%    (19,994)   0.50%    (21)   1.95%    (20,015)
+                          13   1.69%    (17,325)   0.38%    (16)   1.69%    (17,341)
+                          14   1.56%    (15,974)   0.36%    (15)   1.55%    (15,989)
+                          15   1.17%    (11,937)   0.19%     (8)   1.16%    (11,945)
+                          16   0.04%       (454)   0.00%     (0)   0.04%       (454)
+                       Total 100.00% (1,024,286) 100.00% (4,202) 100.00% (1,028,488)
+
+
+
+
+
+```{r more analysis}
+
+table(AllClarkCountyWide$agecat, AllClarkCountyWide$allegiant)
+prop.table(table(AllClarkCountyWide$agecat, AllClarkCountyWide$allegiant), margin = 2)  # Column percentages
+glimpse(AllClarkCountyWide$agecat)
+
+
+summary(AllClarkCountyWide$numtimesvoted_beforeNov2024[AllClarkCountyWide$allegiant == 1])
+
+summary(AllClarkCountyWide$numtimesvoted_beforeNov2024[AllClarkCountyWide$allegiant == 0 & AllClarkCountyWide$votemethod2024 != 8])
+
+
+table(AllClarkCountyWide$numtimesvoted_beforeNov2024[AllClarkCountyWide$votemethod2024 != 8], AllClarkCountyWide$allegiant[AllClarkCountyWide$votemethod2024 != 8])
+
+prop.table(table(AllClarkCountyWide$numtimesvoted_beforeNov2024[AllClarkCountyWide$votemethod2024 != 8], AllClarkCountyWide$allegiant[AllClarkCountyWide$votemethod2024 != 8]), margin = 2)
+
+
+
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    dateofbirth = mdy(birthdate),
+    age11052024 = as.numeric(difftime(ymd("2024-11-05"), dateofbirth, units = "days") / 365.25),
+    ageEDay = floor(age11052024)
+  ) %>%
+  filter(ageEDay >= 18)  # Drop those under 18
+
+# Create age categories
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    agecat = case_when(
+      ageEDay >= 18 & ageEDay <= 24 ~ 1,
+      ageEDay >= 25 & ageEDay <= 29 ~ 2,
+      ageEDay >= 30 & ageEDay <= 39 ~ 3,
+      ageEDay >= 40 & ageEDay <= 49 ~ 4,
+      ageEDay >= 50 & ageEDay <= 64 ~ 5,
+      ageEDay >= 65 ~ 6
+    )
+  )
+
+# Convert registration date and compute registration length
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    regdate = mdy(registrationdate),
+    reg_length = as.numeric(difftime(ymd("2024-11-05"), regdate, units = "days") / 365.25),
+    regcat = case_when(
+      reg_length <= -0.24 & reg_length > -0.071 ~ -2,
+      reg_length <= -0.07 & reg_length > -0.002 ~ -1,
+      reg_length == 0 ~ 0,
+      reg_length > 0 & reg_length <= 0.096 ~ 1,
+      reg_length > 0.096 & reg_length <= 0.178 ~ 2,
+      reg_length > 0.178 & reg_length <= 0.846 ~ 3,
+      reg_length > 0.847 ~ 4
+    )
+  )
+
+# Define voting method variable for Nov 2024
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    votemethod2024 = case_when(
+      is.na(votecode59) & allegiant == 1 ~ 1,
+      votecode59 == "PV" & allegiant == 1 ~ 2,
+      votecode59 == "PP" & allegiant == 1 ~ 3,
+      votecode59 == "PV" & allegiant != 1 ~ 4,
+      votecode59 == "PP" & allegiant != 1 ~ 5,
+      votecode59 == "MB" ~ 6,
+      votecode59 == "EV" ~ 7,
+      is.na(votecode59) & allegiant != 1 ~ 8
+    )
+  )
+
+# Count elections voted in
+vote_columns <- paste0("votecode", 41:58)  # Only considering from 2010 onwards
+
+#this took too long didnt run it
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  rowwise() %>%
+  mutate(
+    numtimesvoted_beforeNov2024 = sum(!is.na(c_across(all_of(vote_columns)))),
+    numtimesvoted_beforeFeb2024 = sum(!is.na(c_across(all_of(vote_columns[1:16])))),  # Excluding 2024 elections
+    voted2020_not2022 = ifelse(!is.na(votecode52) & is.na(votecode55), 1, 0)
+  ) %>%
+  ungroup()
+
+
+# Summary statistics
+summary_table <- AllClarkCountyWide %>%
+  group_by(allegiant, numtimesvoted_beforeNov2024) %>%
+  summarise(count = n(), .groups = "drop")
+
+
+# Display summary tables
+print(summary_table)
+
+
+
+
+# Ensure numtimesvoted_beforeNov2024 is numeric
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(numtimesvoted_beforeNov2024 = as.numeric(numtimesvoted_beforeNov2024))
+
+# Crosstab for Number of Times Voted by Allegiant Status, sorted numerically
+vote_history_table <- AllClarkCountyWide %>%
+  arrange(numtimesvoted_beforeNov2024) %>%  # Sort the data numerically
+  tabyl(numtimesvoted_beforeNov2024, allegiant) %>%  # Create crosstab
+  adorn_totals("row") %>%      # Add total row
+  adorn_totals("col") %>%      # Add total column
+  adorn_percentages("col") %>% # Convert to column percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print the sorted table
+print(vote_history_table)
+
+
+# Convert to gt table for better readability
+vote_history_table %>%
+  gt() %>%
+  tab_options(
+    table.font.size = "medium",
+    heading.title.font.size = "large"
+  ) %>%
+  cols_label(
+    numtimesvoted_beforeNov2024 = "Times Voted",
+    `0` = "Non-Allegiant",
+    `1` = "Allegiant",
+    `Total` = "Total"
+  ) %>%
+  fmt_number(columns = everything(), decimals = 0)
+
+
+
+
+# Save as a PDF
+gtsave(vote_history_table %>% gt(), "vote_history_table.pdf")
+
+
+
+
+# Ensure age category is numeric for sorting
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(agecat = as.numeric(agecat))
+
+# Create the age category crosstab
+age_table <- AllClarkCountyWide %>%
+  tabyl(agecat, allegiant) %>%  # Crosstab
+  adorn_totals("row") %>%      # Add total row
+  adorn_totals("col") %>%      # Add total column
+  adorn_percentages("col") %>% # Convert to column percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print the table
+print(age_table)
+age_table %>%
+  gt() %>%
+  tab_options(
+    table.font.size = "medium",
+    heading.title.font.size = "large"
+  ) %>%
+  cols_label(
+    agecat = "Age Category",
+    `0` = "Non-Allegiant",
+    `1` = "Allegiant",
+    `Total` = "Total"
+  )
+
+
+gtsave(age_table %>% gt(), "age_table.pdf")
+
+
+
+
+library(dplyr)
+library(janitor)
+library(gt)
+
+# Ensure party is a factor with the correct order
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(party = factor(party, levels = c(
+    "Democrat", 
+    "Republican", 
+    "Non-Partisan", 
+    "Independent American Party", 
+    "Libertarian Party", 
+    "Nevada Forward Party",
+    "Nevada Green Party",
+    "Nevada Transhumanist Party",
+    "No Labels Nevada",
+    "Other (All Others)"
+  )))
+
+# Create the crosstab for Party Affiliation
+party_table <- AllClarkCountyWide %>%
+  tabyl(party, allegiant) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()  # Show counts and percentages
+
+# Print the sorted table
+print(party_table)
+
+party_table %>%
+  gt() %>%
+  tab_options(
+    table.font.size = "medium",
+    heading.title.font.size = "large"
+  ) %>%
+  cols_label(
+    party = "Party",
+    `0` = "Non-Allegiant",
+    `1` = "Allegiant",
+    `Total` = "Total"
+  )
+gtsave(party_table %>% gt(), "party_table.pdf")
+
+
+
+
+# Define age ranges correctly
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(agecat = case_when(
+    ageEDay >= 18 & ageEDay <= 24 ~ "18-24",
+    ageEDay >= 25 & ageEDay <= 29 ~ "25-29",
+    ageEDay >= 30 & ageEDay <= 39 ~ "30-39",
+    ageEDay >= 40 & ageEDay <= 49 ~ "40-49",
+    ageEDay >= 50 & ageEDay <= 64 ~ "50-64",
+    ageEDay >= 65 ~ "65+"
+  ))
+
+# Define voter type: Allegiant vs. Other
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_status = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 ~ "Other Voter"
+  ))
+
+# Ensure factors are ordered correctly
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(agecat = factor(agecat, levels = c("18-24", "25-29", "30-39", "40-49", "50-64", "65+")))
+
+# Create age crosstab
+age_table <- AllClarkCountyWide %>%
+  tabyl(agecat, voter_status) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()  # Show counts and percentages
+
+# Print table
+print(age_table)
+
+
+age_table %>%
+  gt() %>%
+  cols_label(
+    agecat = "Age Category",
+    `Allegiant Voter` = "Allegiant",
+    `Other Voter` = "Other Voter",
+    `Total` = "Total"
+  )
+gtsave(party_table %>% gt(), "agejustallegiantandother.pdf")
+
+
+
+
+
+# Compute average age by voter status
+average_age <- AllClarkCountyWide %>%
+  group_by(voter_status) %>%
+  summarise(
+    avg_age = mean(ageEDay, na.rm = TRUE),  # Calculate mean age
+    sd_age = sd(ageEDay, na.rm = TRUE),     # Standard deviation
+    min_age = min(ageEDay, na.rm = TRUE),   # Youngest voter
+    max_age = max(ageEDay, na.rm = TRUE),   # Oldest voter
+    count = n()                             # Number of voters in each group
+  )
+
+# Print the results
+print(average_age)
+
+
+
+
+```
+
+
+                avg_age   sd_age min_age max_age count
+Allegiant Voter	40.38101	13.5035 	18	   91	   4202
+Other Voter   	47.39189	18.5357 	18   	122  	1635074
+
+
+
+```{r provisional included}
+
+# Create new column to classify voters
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(allegiant_provisional = case_when(
+    allegiant == 1 & votecode59 == "PV" ~ "Allegiant Provisional Voter",
+    allegiant == 1 & votecode59 != "PV" ~ "Allegiant Regular Ballot Voter",
+    allegiant == 0 & votecode59 == "PV" ~ "Other Provisional Voter",
+    allegiant == 0 & votecode59 != "PV" ~ "Other Regular Ballot Voter"
+  ))
+
+# Check how many voters fall into each category
+table(AllClarkCountyWide$allegiant_provisional)
+
+
+
+
+
+# Define voter categories
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 & votemethod2024 != 8 ~ "Other Voter",
+    votemethod2024 == 8 ~ "Nonvoter"
+  ))
+
+# Check how many people fall into each category
+table(AllClarkCountyWide$voter_category)
+
+
+
+# Create crosstab for previous elections voted by voter type
+vote_history_table <- AllClarkCountyWide %>%
+  tabyl(numtimesvoted_beforeNov2024, voter_category) %>%
+  adorn_totals("row") %>%  # Add total row
+  adorn_totals("col") %>%  # Add total column
+  adorn_percentages("col") %>%  # Convert to percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print table
+print(vote_history_table)
+#accurate with slightly different for nonvoter and other voter
+
+
+
+
+
+
+
+
+# Reclassify number of previous elections voted
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 & votemethod2024 != 8 ~ "Other Voter",
+    votemethod2024 == 8 ~ "Nonvoter"
+  )) %>%
+  mutate(vote_history_grouped = case_when(
+    numtimesvoted_beforeNov2024 == 0 ~ "0",
+    numtimesvoted_beforeNov2024 == 1 ~ "1",
+    numtimesvoted_beforeNov2024 == 2 ~ "2",
+    numtimesvoted_beforeNov2024 >= 3 ~ "3 to 16"
+  ))
+
+# Check distribution
+table(AllClarkCountyWide$vote_history_grouped, AllClarkCountyWide$voter_category)
+
+
+
+
+# Create crosstab with grouped voting history
+vote_history_table <- AllClarkCountyWide %>%
+  tabyl(vote_history_grouped, voter_category) %>%
+  adorn_totals("row") %>%  # Add total row
+  adorn_totals("col") %>%  # Add total column
+  adorn_percentages("col") %>%  # Convert to percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print the table
+print(vote_history_table)
+
+#looks good
+
+
+colnames(AllClarkCountyWide)
+
+
+
+
+# Categorize registration timing
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(registration_category = case_when(
+    reg_length < 0 ~ "Election Day",
+    reg_length >= 0 & reg_length < 1 ~ "10/1 to 11/4/24",
+    reg_length >= 1 ~ "2023 or earlier",
+    TRUE ~ "Other"
+  ))
+
+# Check the distribution of registration categories
+table(AllClarkCountyWide$registration_category)
+
+
+# Ensure voter type classification is correct
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 & votemethod2024 != 8 ~ "Other Voter",
+    votemethod2024 == 8 ~ "Nonvoter"
+  ))
+
+# Check counts
+table(AllClarkCountyWide$registration_category, AllClarkCountyWide$voter_category)
+
+
+
+# Create crosstab for registration timing
+registration_table <- AllClarkCountyWide %>%
+  tabyl(registration_category, voter_category) %>%
+  adorn_totals("row") %>%  # Add total row
+  adorn_totals("col") %>%  # Add total column
+  adorn_percentages("col") %>%  # Convert to percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print table
+print(registration_table)
+#pretty different especially for election day
+#think about why its different
+
+
+
+
+
+
+
+# Categorize age into bins
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(agecat = case_when(
+    ageEDay >= 18 & ageEDay <= 24 ~ "18-24",
+    ageEDay >= 25 & ageEDay <= 29 ~ "25-29",
+    ageEDay >= 30 & ageEDay <= 39 ~ "30-39",
+    ageEDay >= 40 & ageEDay <= 49 ~ "40-49",
+    ageEDay >= 50 & ageEDay <= 64 ~ "50-65",
+    ageEDay >= 65 ~ "65+"
+  ))
+
+# Ensure voter type classification is correct
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 & votemethod2024 != 8 ~ "Other Voter",
+    votemethod2024 == 8 ~ "Nonvoter"
+  ))
+
+# Check counts
+table(AllClarkCountyWide$agecat, AllClarkCountyWide$voter_category)
+
+
+# Create crosstab for age distribution
+age_table <- AllClarkCountyWide %>%
+  tabyl(agecat, voter_category) %>%
+  adorn_totals("row") %>%  # Add total row
+  adorn_totals("col") %>%  # Add total column
+  adorn_percentages("col") %>%  # Convert to percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print table
+print(age_table)
+
+
+average_age <- AllClarkCountyWide %>%
+  group_by(voter_category) %>%
+  summarise(
+    avg_age = mean(ageEDay, na.rm = TRUE),
+    sd_age = sd(ageEDay, na.rm = TRUE),
+    min_age = min(ageEDay, na.rm = TRUE),
+    max_age = max(ageEDay, na.rm = TRUE),
+    count = n()
+  )
+
+# Print results
+print(average_age)
+#average age
+#allegiant 40.3  nonvoter 42.04 other 50.58
+#age looks good
+
+
+
+
+
+
+
+
+# Categorize parties
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(party_grouped = case_when(
+    party == "Democrat" ~ "Democrat",
+    party == "Republican" ~ "Republican",
+    party == "Non-Partisan" ~ "Non-Partisan",
+    TRUE ~ "Other"
+  ))
+
+# Define voter categories
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 & votemethod2024 != 8 ~ "Other Voter",
+    votemethod2024 == 8 ~ "Nonvoter"
+  ))
+
+# Check counts
+table(AllClarkCountyWide$party_grouped, AllClarkCountyWide$voter_category)
+
+
+
+# Create crosstab for party registration
+party_table <- AllClarkCountyWide %>%
+  tabyl(party_grouped, voter_category) %>%
+  adorn_totals("row") %>%  # Add total row
+  adorn_totals("col") %>%  # Add total column
+  adorn_percentages("col") %>%  # Convert to percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print table
+print(party_table)
+#looks good and the same
+
+```
+
+
+```{r checking report provisional voters}
+
+
+
+
+
+table(AllClarkCountyWide$votecode59, AllClarkCountyWide$allegiant)
+
+
+# Categorize voters based on location and ballot type
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & votecode59 == "PV" ~ "Allegiant Provisional Voter",
+    allegiant == 1 & votecode59 != "PV" ~ "Allegiant Regular Ballot Voter",
+    allegiant == 0 & votecode59 == "PV" ~ "Other Vote Center Provisional Ballot Voter",  # FIXED
+    allegiant == 0 & votecode59 != "PV" & votemethod2024 == 5 ~ "Other Vote Center Regular Ballot Voter"
+  ))
+
+# Check distribution again
+table(AllClarkCountyWide$voter_category)
+
+
+
+# Categorize previous elections voted
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(vote_history_grouped = case_when(
+    numtimesvoted_beforeNov2024 == 0 ~ "0",
+    numtimesvoted_beforeNov2024 == 1 ~ "1",
+    numtimesvoted_beforeNov2024 == 2 ~ "2",
+    numtimesvoted_beforeNov2024 >= 3 ~ "3 to 16"
+  ))
+
+# Check distribution
+table(AllClarkCountyWide$vote_history_grouped, AllClarkCountyWide$voter_category)
+
+
+
+# Create crosstab
+vote_history_table <- AllClarkCountyWide %>%
+  tabyl(vote_history_grouped, voter_category) %>%
+  adorn_totals("row") %>%  # Add total row
+  adorn_totals("col") %>%  # Add total column
+  adorn_percentages("col") %>%  # Convert to percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print table
+print(vote_history_table)
+
+#looks the same
+
+
+
+
+
+
+# Categorize registration timing
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(registration_category = case_when(
+    reg_length < 0 ~ "Election Day",
+    reg_length >= 0 & reg_length < 1 ~ "10/1 to 11/4/24",
+    reg_length >= 1 ~ "2023 or earlier",
+    TRUE ~ "Other"
+  ))
+
+# Check distribution
+table(AllClarkCountyWide$registration_category)
+
+# Categorize voters
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & votecode59 == "PV" ~ "Allegiant Provisional Voter",
+    allegiant == 1 & votecode59 != "PV" ~ "Allegiant Regular Ballot Voter",
+    allegiant == 0 & votecode59 == "PV" ~ "Other Vote Center Provisional Ballot Voter",
+    allegiant == 0 & votecode59 != "PV" & votemethod2024 == 5 ~ "Other Vote Center Regular Ballot Voter"
+  ))
+
+# Check counts
+table(AllClarkCountyWide$voter_category)
+
+
+# Create crosstab for registration timing
+registration_table <- AllClarkCountyWide %>%
+  tabyl(registration_category, voter_category) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print table
+print(registration_table)
+#this one is different too
+#mostly election day for allegiant provisional voter
+
+
+
+
+
+
+
+
+# Categorize age into bins
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(agecat = case_when(
+    ageEDay >= 18 & ageEDay <= 24 ~ "18-24",
+    ageEDay >= 25 & ageEDay <= 29 ~ "25-29",
+    ageEDay >= 30 & ageEDay <= 39 ~ "30-39",
+    ageEDay >= 40 & ageEDay <= 49 ~ "40-49",
+    ageEDay >= 50 & ageEDay <= 64 ~ "50-65",
+    ageEDay >= 65 ~ "65+"
+  ))
+
+# Ensure voter category classification is correct
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & votecode59 == "PV" ~ "Allegiant Provisional Voter",
+    allegiant == 1 & votecode59 != "PV" ~ "Allegiant Regular Ballot Voter",
+    allegiant == 0 & votecode59 == "PV" ~ "Other Vote Center Provisional Ballot Voter",
+    allegiant == 0 & votecode59 != "PV" & votemethod2024 == 5 ~ "Other Vote Center Regular Ballot Voter"
+  ))
+
+# Check counts
+table(AllClarkCountyWide$agecat, AllClarkCountyWide$voter_category)
+
+
+
+# Create crosstab for age distribution
+age_table <- AllClarkCountyWide %>%
+  tabyl(agecat, voter_category) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print table
+print(age_table)
+
+# Compute average age by voter status
+average_age <- AllClarkCountyWide %>%
+  group_by(voter_category) %>%
+  summarise(
+    avg_age = mean(ageEDay, na.rm = TRUE),
+    sd_age = sd(ageEDay, na.rm = TRUE),
+    min_age = min(ageEDay, na.rm = TRUE),
+    max_age = max(ageEDay, na.rm = TRUE),
+    count = n()
+  )
+
+# Print results
+print(average_age)
+#slightly different
+#averages are different but table is the same
+
+
+
+
+
+
+
+
+# Categorize parties
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(party_grouped = case_when(
+    party == "Democrat" ~ "Democrat",
+    party == "Republican" ~ "Republican",
+    party == "Non-Partisan" ~ "Non-Partisan",
+    TRUE ~ "Other"
+  ))
+
+# Check the distribution
+table(AllClarkCountyWide$party_grouped)
+
+# Categorize voters
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & votecode59 == "PV" ~ "Allegiant Provisional Voter",
+    allegiant == 1 & votecode59 != "PV" ~ "Allegiant Regular Ballot Voter",
+    allegiant == 0 & votecode59 == "PV" ~ "Other Vote Center Provisional Ballot Voter",
+    allegiant == 0 & votecode59 != "PV" & votemethod2024 == 5 ~ "Other Vote Center Regular Ballot Voter"
+  ))
+
+# Check counts
+table(AllClarkCountyWide$party_grouped, AllClarkCountyWide$voter_category)
+
+
+# Create crosstab for party registration
+party_table <- AllClarkCountyWide %>%
+  tabyl(party_grouped, voter_category) %>%
+  adorn_totals("row") %>%  # Add total row
+  adorn_totals("col") %>%  # Add total column
+  adorn_percentages("col") %>%  # Convert to percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print table
+print(party_table)
+#its the same
+
+```
+
+
+
+
+```{r looking at registration again}
+
+summary(AllClarkCountyWide$reg_length)
+
+# Categorize registration timing
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(registration_category = case_when(
+    reg_length < 0 ~ "Election Day",
+    reg_length >= 0 & reg_length < 1 ~ "10/1 to 11/4/24",
+    reg_length >= 1 ~ "2023 or earlier",
+    TRUE ~ "Other"
+  ))
+
+# Check the distribution of registration categories
+table(AllClarkCountyWide$registration_category)
+
+
+
+
+
+# Ensure voter type classification is correct
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 & votemethod2024 != 8 ~ "Other Voter",
+    votemethod2024 == 8 ~ "Nonvoter"
+  ))
+
+# Check counts
+table(AllClarkCountyWide$registration_category, AllClarkCountyWide$voter_category)
+
+
+
+# Create crosstab for registration timing
+registration_table1 <- AllClarkCountyWide %>%
+  tabyl(registration_category, voter_category) %>%
+  adorn_totals("row") %>%  # Add total row
+  adorn_totals("col") %>%  # Add total column
+  adorn_percentages("col") %>%  # Convert to percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format percentages
+  adorn_ns()  # Show both counts and percentages
+
+# Print table
+print(registration_table1)
+#pretty different especially for election day
+#think about why its different
+
+
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(registration_category = case_when(
+    reg_length < 0 ~ "Election Day",
+    reg_length >= 0 & reg_length < 1 ~ "10/1 to 11/4/24",
+    reg_length >= 1 ~ "2023 or earlier",
+    TRUE ~ "Other"
+  ))
+
+# Check distribution
+table(AllClarkCountyWide$registration_category)
+
+# Categorize voters
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & votecode59 == "PV" ~ "Allegiant Provisional Voter",
+    allegiant == 1 & votecode59 != "PV" ~ "Allegiant Regular Ballot Voter",
+    allegiant == 0 & votecode59 == "PV" ~ "Other Vote Center Provisional Ballot Voter",
+    allegiant == 0 & votecode59 != "PV" & votemethod2024 == 5 ~ "Other Vote Center Regular Ballot Voter"
+  ))
+
+# Check counts
+table(AllClarkCountyWide$voter_category)
+
+
+# Create crosstab for registration timing
+registration_table2 <- AllClarkCountyWide %>%
+  tabyl(registration_category, voter_category) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print table
+print(registration_table2)
+#this one is different too
+#mostly election day for allegiant provisional voter
+
+
+#attempts to fix
+
+
+
+# Use existing reg_length variable to categorize registration dates
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(registration_category = case_when(
+    reg_length == 0 ~ "Election Day",  # Registered on Election Day (Nov 5, 2024)
+    reg_length > 0 & reg_length <= 0.096 ~ "10/1 to 11/4/24",  # Registered between October 1 and November 4, 2024
+    reg_length > 1 ~ "2023 or earlier",  # Registered in 2023 or earlier
+    TRUE ~ "Other"  # Catch-all for anything else
+  ))
+
+# Check the distribution of categories
+table(AllClarkCountyWide$registration_category)
+
+
+
+# Create crosstab for registration timing
+registration_table3 <- AllClarkCountyWide %>%
+  tabyl(registration_category, voter_category) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print table
+print(registration_table3)
+
+
+
+registration_table4 <- AllClarkCountyWide %>%
+  tabyl(registration_category, voter_category) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print table
+print(registration_table4)
+
+
+
+
+
+#age
+average_age <- AllClarkCountyWide %>%
+  group_by(voter_category) %>%
+  summarise(
+    avg_age = mean(ageEDay, na.rm = TRUE),
+    sd_age = sd(ageEDay, na.rm = TRUE),
+    min_age = min(ageEDay, na.rm = TRUE),
+    max_age = max(ageEDay, na.rm = TRUE),
+    count = n()
+  )
+
+# Print results
+print(average_age)
+#slightly different
+#averages are different but table is the same
+```
+
+
+
+
+```{r voting method analysis}
+
+
+
+
+
+# Categorize voting methods
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voting_method = case_when(
+    votecode59 == "PV" ~ "Provisional",
+    votecode59 == "PP" ~ "Polling Place",
+    votecode59 == "MB" ~ "Mail Ballot",
+    votecode59 == "EV" ~ "Early Voting",
+    votecode59 == "" ~ "Did Not Vote",
+    TRUE ~ "Other"
+  ))
+
+# Categorize voters as Allegiant vs. Non-Allegiant
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(allegiant_status = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 ~ "Non-Allegiant Voter"
+  ))
+
+# Check distribution
+table(AllClarkCountyWide$voting_method, AllClarkCountyWide$allegiant_status)
+
+
+
+# Create crosstab for voting method by Allegiant vs. Non-Allegiant Voters
+voting_method_table <- AllClarkCountyWide %>%
+  tabyl(voting_method, allegiant_status) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print table
+print(voting_method_table)
+
+
+
+
+
+
+
+
+
+# Define the voting method columns (adjust if they have different names)
+voting_columns <- paste0("votecode", 41:59)  # Elections from votecode41 to votecode59
+
+# Create new columns to count occurrences of each voting method
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    count_provisional = rowSums(select(., all_of(voting_columns)) == "PV", na.rm = TRUE),
+    count_polling_place = rowSums(select(., all_of(voting_columns)) == "PP", na.rm = TRUE),
+    count_mail = rowSums(select(., all_of(voting_columns)) == "MB", na.rm = TRUE),
+    count_early_voting = rowSums(select(., all_of(voting_columns)) == "EV", na.rm = TRUE)
+  )
+
+
+# Assign the most frequently used voting method
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(primary_voting_method = case_when(
+    count_provisional == pmax(count_provisional, count_polling_place, count_mail, count_early_voting) ~ "Provisional",
+    count_polling_place == pmax(count_provisional, count_polling_place, count_mail, count_early_voting) ~ "Polling Place",
+    count_mail == pmax(count_provisional, count_polling_place, count_mail, count_early_voting) ~ "Mail Ballot",
+    count_early_voting == pmax(count_provisional, count_polling_place, count_mail, count_early_voting) ~ "Early Voting",
+    TRUE ~ "Other"
+  ))
+
+# Check the results
+table(AllClarkCountyWide$primary_voting_method)
+
+
+voting_method_table <- AllClarkCountyWide %>%
+  tabyl(primary_voting_method, allegiant_status) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+print(voting_method_table)
+
+
+
+
+table(ReturningAllegiantVoters$votecode59, useNA = "always")
+
+
+
+# Count Nov 2024 Voting Methods
+nov_2024_counts <- table(ReturningAllegiantVoters$nov2024_voting_method)
+
+# Count Primary (Most Frequent) Voting Methods
+primary_counts <- table(ReturningAllegiantVoters$primary_voting_method)
+
+# Convert tables to data frames
+nov_2024_df <- as.data.frame(nov_2024_counts)
+primary_df <- as.data.frame(primary_counts)
+
+# Rename columns for clarity
+colnames(nov_2024_df) <- c("Voting Method", "Nov 2024 Allegiant Voters")
+colnames(primary_df) <- c("Voting Method", "Primary Voting Method")
+
+# Merge both tables by Voting Method
+voting_comparison_table <- full_join(nov_2024_df, primary_df, by = "Voting Method") %>%
+  replace(is.na(.), 0)  # Replace NA with 0 if there are missing categories
+
+# Add percentages
+voting_comparison_table <- voting_comparison_table %>%
+  mutate(
+    `Nov 2024 Percentage` = round(100 * `Nov 2024 Allegiant Voters` / sum(`Nov 2024 Allegiant Voters`), 2),
+    `Primary Percentage` = round(100 * `Primary Voting Method` / sum(`Primary Voting Method`), 2)
+  )
+
+# Print the final table
+print(voting_comparison_table)
+
+
+
+
+```
+voting_method Allegiant Voter Non-Allegiant Voter               Total
+  Early Voting   0.00%     (0)  23.71%   (387,651)  23.65%   (387,651)
+   Mail Ballot   0.00%     (0)  26.98%   (441,082)  26.91%   (441,082)
+         Other   0.00%     (0)  37.36%   (610,788)  37.26%   (610,788)
+ Polling Place  93.48% (3,928)  10.87%   (177,678)  11.08%   (181,606)
+   Provisional   6.52%   (274)   1.09%    (17,875)   1.11%    (18,149)
+         Total 100.00% (4,202) 100.00% (1,635,074) 100.00% (1,639,276)
+         
+         
+         across time
+   primary_voting_method Allegiant Voter Non-Allegiant Voter               Total
+          Early Voting   8.81%   (370)  24.63%   (402,772)  24.59%   (403,142)
+           Mail Ballot   3.09%   (130)  27.66%   (452,278)  27.60%   (452,408)
+         Polling Place  77.15% (3,242)  20.56%   (336,095)  20.70%   (339,337)
+           Provisional  10.95%   (460)  27.15%   (443,929)  27.11%   (444,389)
+                 Total 100.00% (4,202) 100.00% (1,635,074) 100.00% (1,639,276)
+         
+         
+  just allegiant returning voters
+  Voting Method	 Nov 2024 Allegiant Voters	 Nov 2024 Percentage	Primary Voting Method	 Primary Percentage
+Polling Place         	 2,712	    99.8%	                         2,026	74.6%
+Provisional	            5	       0.2%	                             191	7.0%
+Mail Ballot	             0	      0.0%                            	130	4.8%
+Early Voting   	         0	     0.0%	                            370	13.6%
+Total	                 2,717	   100%	                            2,717	100%
+
+
+
+
+```{r first time allegiant voters analysis}
+
+
+# Categorize Allegiant voters as first-time or returning
+AllegiantVoters <- AllClarkCountyWide %>%
+  filter(allegiant == 1) %>%
+  mutate(voter_type = case_when(
+    numtimesvoted_beforeNov2024 == 0 ~ "First-Time Allegiant Voter",
+    numtimesvoted_beforeNov2024 > 0 ~ "Returning Allegiant Voter"
+  ))
+
+# Create crosstab for party registration
+firstparty_table <- AllegiantVoters %>%
+  tabyl(voter_type, party_grouped) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print the table
+print(firstparty_table)
+
+
+
+# Categorize Non-Allegiant voters as first-time or returning
+NonAllegiantVoters <- AllClarkCountyWide %>%
+  filter(allegiant == 0) %>%
+  mutate(voter_type = case_when(
+    numtimesvoted_beforeNov2024 == 0 ~ "First-Time Non-Allegiant Voter",
+    numtimesvoted_beforeNov2024 > 0 ~ "Returning Non-Allegiant Voter"
+  ))
+
+# Create crosstab for party registration
+party_table_non_allegiant <- NonAllegiantVoters %>%
+  tabyl(voter_type, party_grouped) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print the table
+print(party_table_non_allegiant)
+
+
+
+# Create crosstab for age categories
+firstage_table <- AllegiantVoters %>%
+  tabyl(voter_type, agecat) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print the table
+print(firstage_table)
+
+
+
+# Create crosstab for age categories
+age_table_non_allegiant <- NonAllegiantVoters %>%
+  tabyl(voter_type, agecat) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print the table
+print(age_table_non_allegiant)
+
+
+
+
+
+# Filter for first-time voters (numtimesvoted_beforeNov2024 == 0)
+FirstTimeVoters <- AllClarkCountyWide %>%
+  filter(numtimesvoted_beforeNov2024 == 0)
+
+# Calculate average age by voter type (Allegiant vs. Non-Allegiant)
+average_age_first_time <- FirstTimeVoters %>%
+  group_by(allegiant) %>%
+  summarise(Average_Age = mean(ageEDay, na.rm = TRUE))
+
+# Print results
+print(average_age_first_time)
+
+#allegiant first time voter 36.03
+#nonallegiant first time voter 39
+
+
+```
+
+print(firstparty_table)
+                 voter_type       Democrat   Non-Partisan       Other     Republican           Total
+ First-Time Allegiant Voter 19.87%   (295) 50.57%   (751) 5.99%  (89) 23.57%   (350) 100.00% (1,485)
+  Returning Allegiant Voter 39.68% (1,078) 28.38%   (771) 7.18% (195) 24.77%   (673) 100.00% (2,717)
+                      Total 32.67% (1,373) 36.22% (1,522) 6.76% (284) 24.35% (1,023) 100.00% (4,202)
+                      
+print(party_table_non_allegiant)
+                     voter_type         Democrat     Non-Partisan       Other       Republican               Total
+ First-Time Non-Allegiant Voter 18.88% (112,784) 60.05% (358,645) 6.58%  (39,280) 14.49%  (86,566) 100.00%   (597,275)
+  Returning Non-Allegiant Voter 38.75% (402,168) 22.56% (234,176) 7.28%  (75,553) 31.40% (325,902) 100.00% (1,037,799)
+                          Total 31.49% (514,952) 36.26% (592,821) 7.02% (114,833) 25.23% (412,468) 100.00% (1,635,074)
+                      
+                      
+ 
+     voter_type                 18-24        25-29          30-39        40-49        50-65         65+           Total
+ First-Time Allegiant Voter 20.67% (307) 14.14% (210) 29.90%   (444) 20.13% (299) 13.00% (193) 2.15%  (32) 100.00% (1,485)
+  Returning Allegiant Voter  6.81% (185) 12.22% (332) 26.13%   (710) 24.73% (672) 23.00% (625) 7.10% (193) 100.00% (2,717)
+                      Total 11.71% (492) 12.90% (542) 27.46% (1,154) 23.11% (971) 19.47% (818) 5.35% (225) 100.00% (4,202)
+                      
+ 
+   voter_type                      18-24            25-29            30-39            40-49            50-65              65+
+ First-Time Non-Allegiant Voter 22.75% (135,878) 12.91%  (77,079) 23.69% (141,483) 15.12%  (90,316) 15.83%  (94,549)  9.71%  (57,970)
+  Returning Non-Allegiant Voter  5.18%  (53,760)  7.05%  (73,199) 16.40% (170,201) 16.64% (172,699) 26.53% (275,294) 28.20% (292,646)
+                          Total 11.60% (189,638)  9.19% (150,278) 19.06% (311,684) 16.09% (263,015) 22.62% (369,843) 21.44% (350,616)
+               Total
+ 100.00%   (597,275)
+ 100.00% (1,037,799)
+ 100.00% (1,635,074)                    
+ 
+ 
+ 
+```{r}
+
+
+
+
+# Filter for voters who registered on Election Day
+ElectionDayVoters <- AllClarkCountyWide %>%
+  filter(registration_category == "Election Day") %>%
+  mutate(voter_type = case_when(
+    allegiant == 1 ~ "Allegiant Voter",
+    allegiant == 0 ~ "Non-Allegiant Voter"
+  ))
+
+
+
+# Create crosstab for party affiliation
+party_table_ED <- ElectionDayVoters %>%
+  tabyl(voter_type, party_grouped) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print table
+print(party_table_ED)
+
+
+# Create crosstab for age categories
+age_table_ED <- ElectionDayVoters %>%
+  tabyl(voter_type, agecat) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print table
+print(age_table_ED)
+
+
+
+# Filter for Election Day registrants
+ElectionDayVoters <- AllClarkCountyWide %>%
+  filter(registration_category == "Election Day")
+
+# Calculate average age by voter type (Allegiant vs. Non-Allegiant)
+average_age_ED <- ElectionDayVoters %>%
+  group_by(allegiant) %>%
+  summarise(Average_Age = mean(ageEDay, na.rm = TRUE))
+
+# Print results
+print(average_age_ED)
+#allegiant election day registration average age 37.67
+#nonallegiant election day registration average age 35.98
+
+```
+Just election day registration
+print(party_table_ED)
+          voter_type       Democrat   Non-Partisan       Other     Republican           Total
+     Allegiant Voter 31.91%    (60) 26.06%    (49) 6.38%  (12) 35.64%    (67) 100.00%   (188)
+ Non-Allegiant Voter 30.75% (2,550) 29.51% (2,447) 7.84% (650) 31.91% (2,646) 100.00% (8,293)
+               Total 30.77% (2,610) 29.43% (2,496) 7.81% (662) 31.99% (2,713) 100.00% (8,481)
+               
+               
+ print(age_table_ED)
+          voter_type          18-24          25-29          30-39          40-49          50-65         65+           Total
+     Allegiant Voter 16.49%    (31) 13.30%    (25) 31.91%    (60) 19.15%    (36) 17.02%    (32) 2.13%   (4) 100.00%   (188)
+ Non-Allegiant Voter 29.56% (2,451) 13.06% (1,083) 23.21% (1,925) 13.72% (1,138) 13.73% (1,139) 6.72% (557) 100.00% (8,293)
+               Total 29.27% (2,482) 13.06% (1,108) 23.41% (1,985) 13.84% (1,174) 13.81% (1,171) 6.61% (561) 100.00% (8,481)
+               
+               
+               
+               
+```{r graphs}
+
+
+# Categorize voters into four groups
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & numtimesvoted_beforeNov2024 == 0 ~ "Allegiant First-Time",
+    allegiant == 1 & numtimesvoted_beforeNov2024 > 0 ~ "Allegiant Returning",
+    allegiant == 0 & numtimesvoted_beforeNov2024 == 0 ~ "Non-Allegiant First-Time",
+    allegiant == 0 & numtimesvoted_beforeNov2024 > 0 ~ "Non-Allegiant Returning"
+  ))
+
+# Calculate total Allegiant and Non-Allegiant voters
+total_allegiant <- sum(AllClarkCountyWide$allegiant == 1)
+total_non_allegiant <- sum(AllClarkCountyWide$allegiant == 0)
+
+# Compute age category distribution for each voter category
+age_distribution <- AllClarkCountyWide %>%
+  group_by(agecat, voter_category) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(
+    total_group = case_when(
+      voter_category %in% c("Allegiant First-Time", "Allegiant Returning") ~ total_allegiant,
+      voter_category %in% c("Non-Allegiant First-Time", "Non-Allegiant Returning") ~ total_non_allegiant
+    ),
+    percentage = (count / total_group) * 100
+  )
+
+# Create the line plot
+ggplot(age_distribution, aes(x = as.factor(agecat), y = percentage, color = voter_category, group = voter_category)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(title = "Age Category Distribution by Voter Category (Percentage of Allegiant/Non-Allegiant)",
+       x = "Age Category",
+       y = "Percentage of Group",
+       color = "Voter Category") +
+  theme_minimal()
+
+
+
+
+
+
+
+colnames(AllClarkCountyWide)
+table(AllClarkCountyWide$votemethod2024, useNA = "always")
+table(AllClarkCountyWide$votecode59, useNA = "always")
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & !is.na(votecode59) ~ "Allegiant 2024 Voter",
+    allegiant == 0 & !is.na(votecode59) ~ "Non-Allegiant 2024 Voter",
+    is.na(votecode59) ~ "Non-2024 Voter"
+  ))
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(numtimesvoted_grouped = case_when(
+    numtimesvoted_beforeNov2024 < 5 ~ as.character(numtimesvoted_beforeNov2024),
+    numtimesvoted_beforeNov2024 >= 5 ~ "5+"
+  ))
+
+
+total_counts <- AllClarkCountyWide %>%
+  group_by(voter_category) %>%
+  summarise(total_group = n(), .groups = "drop")
+
+prior_votes_distribution <- AllClarkCountyWide %>%
+  group_by(numtimesvoted_grouped, voter_category) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  left_join(total_counts, by = "voter_category") %>%
+  mutate(percentage = (count / total_group) * 100)
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = factor(voter_category, levels = c("Non-2024 Voter", "Allegiant 2024 Voter", "Non-Allegiant 2024 Voter")))
+
+
+
+ggplot(prior_votes_distribution, aes(x = numtimesvoted_grouped, y = percentage, fill = voter_category)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Voting History Distribution: Allegiant 2024 Voters, Non-Allegiant 2024 Voters, \nand Non-2024 Voters",
+       x = "Number of Times Voted Before Nov 2024",
+       y = "Percentage of Group",
+       fill = "Voter Category") +
+  scale_fill_manual(values = c("Non-2024 Voter" = "#377eb8",  # Blue
+                               "Allegiant 2024 Voter" = "#4daf4a",  # Green
+                               "Non-Allegiant 2024 Voter" = "#e41a1c")) +  # Red
+  theme_minimal()
+
+
+
+
+
+
+
+
+# Categorize voters into three groups based on their voting status in Nov 2024
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & !is.na(votecode59) ~ "Allegiant 2024 Voter",
+    allegiant == 0 & !is.na(votecode59) ~ "Non-Allegiant 2024 Voter",
+    is.na(votecode59) ~ "Non-2024 Voter"
+  ))
+
+# Calculate total voters in each category
+total_counts <- AllClarkCountyWide %>%
+  group_by(voter_category) %>%
+  summarise(total_group = n(), .groups = "drop")
+
+# Compute party distribution for each voter category using party_grouped
+party_distribution <- AllClarkCountyWide %>%
+  group_by(party_grouped, voter_category) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  left_join(total_counts, by = "voter_category") %>%
+  mutate(percentage = (count / total_group) * 100)
+
+# Ensure correct order of voter categories (Non-2024 Voter first)
+party_distribution <- party_distribution %>%
+  mutate(voter_category = factor(voter_category, levels = c("Non-2024 Voter", "Allegiant 2024 Voter", "Non-Allegiant 2024 Voter")))
+
+# Create the bar plot
+ggplot(party_distribution, aes(x = party_grouped, y = percentage, fill = voter_category)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Party Affiliation Distribution: Allegiant 2024 Voters, \n Non-Allegiant 2024 Voters, and Non-2024 Voters",
+       x = "Party",
+       y = "Percentage of Category",
+       fill = "Voter Category") +
+  scale_fill_manual(values = c("Non-2024 Voter" = "#377eb8",  # Blue
+                               "Allegiant 2024 Voter" = "#4daf4a",  # Green
+                               "Non-Allegiant 2024 Voter" = "#e41a1c")) +  # Red
+  theme_minimal()
+
+
+
+
+party_distribution <- AllClarkCountyWide %>%
+  group_by(voter_category, party_grouped) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  left_join(total_counts, by = "voter_category") %>%
+  mutate(percentage = (count / total_group) * 100)
+
+# Create the flipped bar plot
+ggplot(party_distribution, aes(x = voter_category, y = percentage, fill = party_grouped)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Party Affiliation by Voter Category: Non-2024, Allegiant, and Non-Allegiant Voters",
+       x = "Voter Category",
+       y = "Percentage of Group",
+       fill = "Party") +
+  scale_fill_manual(values = c("Democrat" = "#377eb8",  # Blue
+                               "Republican" = "#e41a1c",  # Red
+                               "Non-Partisan" = "#4daf4a",  # Green
+                               "Other" = "#984ea3")) +  # Purple
+  theme_minimal()
+
+
+```
+```{r more graphs}
+
+
+
+
+
+# Convert registration date to Date format if not already
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(regdate = as.Date(regdate, format="%Y-%m-%d"))
+
+# Categorize voters into three groups based on their voting status in Nov 2024
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & !is.na(votecode59) ~ "Allegiant 2024 Voter",
+    allegiant == 0 & !is.na(votecode59) ~ "Non-Allegiant 2024 Voter",
+    is.na(votecode59) ~ "Non-2024 Voter"
+  ))
+
+
+
+registrations_over_time <- AllClarkCountyWide %>%
+  filter(regdate >= as.Date("2016-01-01")) %>%
+  group_by(reg_month = format(regdate, "%Y-%m"), voter_category) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Convert month to Date type for proper plotting
+registrations_over_time <- registrations_over_time %>%
+  mutate(reg_month = as.Date(paste0(reg_month, "-01")))
+
+
+# Calculate total registrations within each voter group
+total_registrations_by_group <- AllClarkCountyWide %>%
+  group_by(voter_category) %>%
+  summarise(total_group = n(), .groups = "drop")
+
+# Merge to get percentage within each voter group
+registrations_over_time <- registrations_over_time %>%
+  left_join(total_registrations_by_group, by = "voter_category") %>%
+  mutate(percentage = (count / total_group) * 100)
+
+# Calculate the total percentage of all registered voters (voters + non-voters)
+total_registrations_over_time <- AllClarkCountyWide %>%
+  filter(regdate >= as.Date("2016-01-01")) %>%
+  group_by(reg_month = format(regdate, "%Y-%m")) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(reg_month = as.Date(paste0(reg_month, "-01")),
+         total_group = nrow(AllClarkCountyWide), # Total number of all registered voters
+         percentage = (count / total_group) * 100,
+         voter_category = "All Registered Voters")
+
+# Combine both datasets
+registrations_over_time <- bind_rows(registrations_over_time, total_registrations_over_time)
+
+# Create the line plot with all four categories
+ggplot(registrations_over_time, aes(x = reg_month, y = percentage, color = voter_category)) +
+  geom_line(size = 1) +
+  geom_point() +
+  labs(title = "Percentage of Total Registrations Over Time by Voter Category (2016 Onward)",
+       x = "Registration Date",
+       y = "Percentage of Group Registrations",
+       color = "Voter Category") +
+  theme_minimal()
+
+
+ggplot(registrations_over_time, aes(x = reg_month, y = percentage, color = voter_category)) +
+  geom_line(size = 1) +
+  geom_point() +
+  labs(title = "Percentage of Total Registrations Over Time by Voter Category (2016 Onward)",
+       x = "Registration Date",
+       y = "Percentage of Group Registrations",
+       color = "Voter Category") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +  # Add more x-axis labels for detail
+  theme_minimal() +
+  theme(
+    plot.margin = margin(1, 2, 1, 2, "cm"),  # Add extra space around the graph
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+    aspect.ratio = 2/3  # Stretch the plot horizontally
+  )
+```
+```{r method}
+
+colnames(AllClarkCountyWide)
+
+
+library(dplyr)
+
+# Define the voting columns (excluding Nov 2024)
+before2024voting_columns <- paste0("votecode", 41:58)  # Adjust this based on your dataset
+
+# Count how many times each method was used before Nov 2024
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    count_provisional = rowSums(select(., all_of(before2024voting_columns)) == "PV", na.rm = TRUE),
+    count_polling_place = rowSums(select(., all_of(before2024voting_columns)) == "PP", na.rm = TRUE),
+    count_mail = rowSums(select(., all_of(before2024voting_columns)) == "MB", na.rm = TRUE),
+    count_early_voting = rowSums(select(., all_of(before2024voting_columns)) == "EV", na.rm = TRUE)
+  )
+
+# Assign the most frequently used voting method before Nov 2024
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(primary_voting_method_prior = case_when(
+    count_provisional == pmax(count_provisional, count_polling_place, count_mail, count_early_voting) ~ "Provisional",
+    count_polling_place == pmax(count_provisional, count_polling_place, count_mail, count_early_voting) ~ "Polling Place",
+    count_mail == pmax(count_provisional, count_polling_place, count_mail, count_early_voting) ~ "Mail Ballot",
+    count_early_voting == pmax(count_provisional, count_polling_place, count_mail, count_early_voting) ~ "Early Voting",
+    TRUE ~ "Other"
+  ))
+
+# View a sample of the new column
+head(AllClarkCountyWide %>% select(voterid, primary_voting_method_prior))
+
+
+primary_voting_crosstab <- AllClarkCountyWide %>%
+  tabyl(primary_voting_method_prior, allegiant) %>%
+  adorn_totals("row") %>%  # Add row total
+  adorn_totals("col") %>%  # Add column total
+  adorn_percentages("col") %>%  # Convert to column-wise percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format as percentages
+  adorn_ns()  # Add raw count in parentheses
+
+# Print the formatted table
+print(primary_voting_crosstab)
+
+
+
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(voter_category = case_when(
+    allegiant == 1 & !is.na(votecode59) ~ "Allegiant 2024 Voter",
+    allegiant == 0 & !is.na(votecode59) ~ "Non-Allegiant 2024 Voter",
+    is.na(votecode59) ~ "Non-2024 Voter"
+  ))
+
+
+primary_voting_crosstab <- AllClarkCountyWide %>%
+  tabyl(primary_voting_method_prior, voter_category) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%  # Convert to column-wise percentages
+  adorn_pct_formatting(digits = 2) %>%  # Format as percentages
+  adorn_ns()  # Add raw count in parentheses
+
+# Print the formatted table
+print(primary_voting_crosstab)
+
+
+
+
+
+
+install.packages("ggalluvial")
+library(ggalluvial)
+
+AllClarkCountyWide %>%
+  filter(!is.na(primary_voting_method_prior) & !is.na(votemethod2024)) %>%
+  ggplot(aes(axis1 = primary_voting_method_prior, axis2 = votemethod2024, fill = voter_category)) +
+  geom_alluvium(aes(y = 1), width = 0.1) +
+  geom_stratum() +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+  labs(title = "Voting Method Transitions: Before vs. Nov 2024",
+       x = "Voting Method", y = "Number of Voters",
+       fill = "Voter Category") +
+  theme_minimal()
+
+
+
+
+AllClarkCountyWide %>%
+  mutate(total_methods_used = count_provisional + count_polling_place + count_mail + count_early_voting) %>%
+  ggplot(aes(x = total_methods_used, y = voter_category, fill = ..count..)) +
+  geom_tile() +
+  labs(title = "Variation in Voting Methods Used: Allegiant vs. Non-Allegiant vs. Non-2024",
+       x = "Number of Different Voting Methods Used",
+       y = "Voter Type",
+       fill = "Number of Voters") +
+  theme_minimal()
+
+
+
+library(ggridges)
+
+AllClarkCountyWide %>%
+  pivot_longer(cols = c(count_provisional, count_polling_place, count_mail, count_early_voting),
+               names_to = "VotingMethod", values_to = "Count") %>%
+  ggplot(aes(x = Count, y = VotingMethod, fill = voter_category)) +
+  geom_density_ridges(alpha = 0.7) +
+  labs(title = "Voting Method Distribution Across Elections",
+       x = "Times Used",
+       y = "Voting Method",
+       fill = "Voter Category") +
+  theme_minimal()
+
+
+
+```
+
+
+all voters vs allegiant
+ primary_voting_method_prior                   0               1               Total
+                Early Voting  21.41%   (349,989)  16.44%   (691)  21.39%   (350,680)
+                 Mail Ballot  21.08%   (344,744)  10.90%   (458)  21.06%   (345,202)
+               Polling Place  18.46%   (301,892)  31.56% (1,326)  18.50%   (303,218)
+                 Provisional  39.05%   (638,449)  41.10% (1,727)  39.05%   (640,176)
+                       Total 100.00% (1,635,074) 100.00% (4,202) 100.00% (1,639,276)
+                       
+                       
+primary_voting_method_prior Allegiant 2024 Voter    Non-2024 Voter Non-Allegiant 2024 Voter               Total
+                Early Voting       16.44%   (691)   9.71%  (59,284)       28.38%   (290,705)  21.39%   (350,680)
+                 Mail Ballot       10.90%   (458)  11.40%  (69,600)       26.86%   (275,144)  21.06%   (345,202)
+               Polling Place       31.56% (1,326)  12.28%  (75,011)       22.15%   (226,881)  18.50%   (303,218)
+                 Provisional       41.10% (1,727)  66.62% (406,893)       22.61%   (231,556)  39.05%   (640,176)
+                       Total      100.00% (4,202) 100.00% (610,788)      100.00% (1,024,286) 100.00% (1,639,276)
+                       
+                       
+                       
+                       
+```{r voting method previous}
+
+
+
+# Ensure proper mapping of votecode59 values
+AllegiantVoters <- AllClarkCountyWide %>%
+  filter(allegiant == 1) %>%
+  mutate(voting_method_2024 = case_when(
+    votecode59 == "PP" ~ "Polling Place",
+    votecode59 == "PV" ~ "Provisional",
+    votecode59 == "MB" ~ "Mail Ballot",
+    votecode59 == "EV" ~ "Early Voting",
+    TRUE ~ "Unknown"
+  ))
+
+# Identify voting method columns excluding 2024
+voting_method_columns_prior <- names(AllClarkCountyWide)[grepl("votecode[0-9]+", names(AllClarkCountyWide)) & names(AllClarkCountyWide) != "votecode59"]
+
+# Extract last voting method before 2024
+AllegiantVoters <- AllegiantVoters %>%
+  rowwise() %>%
+  mutate(last_voting_method_prior = {
+    voting_methods <- c_across(all_of(voting_method_columns_prior))
+    last_method <- tail(na.omit(voting_methods), 1)
+    ifelse(length(last_method) > 0, last_method, "No Previous Vote")
+  }) %>%
+  ungroup()
+
+# Ensure last voting method is labeled correctly
+AllegiantVoters <- AllegiantVoters %>%
+  mutate(last_voting_method_prior = case_when(
+    last_voting_method_prior == "PP" ~ "Polling Place",
+    last_voting_method_prior == "PV" ~ "Provisional",
+    last_voting_method_prior == "MB" ~ "Mail Ballot",
+    last_voting_method_prior == "EV" ~ "Early Voting",
+    last_voting_method_prior == "No Previous Vote" ~ "No Previous Vote",
+    TRUE ~ "Other"
+  ))
+
+# Create a crosstab with 2024 method as columns and last used method as rows
+allegiant_voting_crosstab <- AllegiantVoters %>%
+  tabyl(voting_method_2024, last_voting_method_prior) %>%
+  adorn_totals("row") %>%
+  adorn_totals("col") %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+
+# Print the formatted table
+print(allegiant_voting_crosstab)
+
+
+
+library(dplyr)
+library(janitor)
+
+# Identify voting method columns excluding 2024
+voting_method_columns_prior <- names(AllClarkCountyWide)[grepl("votecode[0-9]+", names(AllClarkCountyWide)) & names(AllClarkCountyWide) != "votecode59"]
+
+# Identify Allegiant voters and get last voting method before 2024
+AllegiantVoters <- AllClarkCountyWide %>%
+  filter(allegiant == 1) %>%
+  rowwise() %>%
+  mutate(last_voting_method_prior = {
+    voting_methods <- c_across(all_of(voting_method_columns_prior))
+    last_method <- tail(na.omit(voting_methods), 1)
+    ifelse(length(last_method) > 0, last_method, "No Previous Vote")
+  }) %>%
+  ungroup()
+
+# Count how many used each method in 2024
+voting_summary <- AllegiantVoters %>%
+  count(votecode59, name = "Count_2024") %>%
+  rename(`Voting Method` = votecode59)
+
+# Count how many used each method in their last recorded vote
+last_vote_summary <- AllegiantVoters %>%
+  count(last_voting_method_prior, name = "Count_Last") %>%
+  rename(`Voting Method` = last_voting_method_prior)
+
+# Merge both summaries
+final_voting_table <- full_join(voting_summary, last_vote_summary, by = "Voting Method") %>%
+  replace_na(list(Count_2024 = 0, Count_Last = 0))  # Fill NA with 0
+
+# Compute percentages
+total_voters <- nrow(AllegiantVoters)
+final_voting_table <- final_voting_table %>%
+  mutate(
+    `Percentage of Allegiant Voters (2024)` = round((Count_2024 / total_voters) * 100, 2),
+    `Percentage of Allegiant Voters (Last Vote)` = round((Count_Last / total_voters) * 100, 2)
+  )
+
+# Print the formatted table
+print(final_voting_table)
+
+library(knitr)
+
+# Print the table in an easy-to-copy format
+final_voting_table %>%
+  kable(format = "pipe", digits = 2, align = "c", col.names = c("Voting Method", "Count 2024", "% Allegiant Voters (2024)", "Count Last Vote", "% Allegiant Voters (Last Vote)"))
+
+
+
+library(gt)
+
+# Print the table in an easy-to-copy format using `gt`
+final_voting_table %>%
+  gt() %>%
+  tab_header(title = "Allegiant Voters: 2024 vs. Last Voting Method") %>%
+  fmt_number(columns = c("Count_2024", "Count_Last"), decimals = 0) %>%
+  fmt_percent(columns = c("Percentage of Allegiant Voters (2024)", "Percentage of Allegiant Voters (Last Vote)"), decimals = 2)
+
+
+print(final_voting_table, row.names = FALSE)
+
+
+
+library(dplyr)
+library(janitor)
+library(knitr)
+
+# Remove first-time voters (those who never voted before 2024)
+ReturningAllegiantVoters <- AllegiantVoters %>%
+  filter(last_voting_method_prior != "No Previous Vote")
+
+# Count how many used each method in 2024
+voting_summary <- ReturningAllegiantVoters %>%
+  count(votecode59, name = "Count_2024") %>%
+  rename(`Voting Method` = votecode59)
+
+# Count how many used each method in their last recorded vote
+last_vote_summary <- ReturningAllegiantVoters %>%
+  count(last_voting_method_prior, name = "Count_Last") %>%
+  rename(`Voting Method` = last_voting_method_prior)
+
+# Merge both summaries
+final_voting_table <- full_join(voting_summary, last_vote_summary, by = "Voting Method") %>%
+  replace_na(list(Count_2024 = 0, Count_Last = 0))  # Fill NA with 0
+
+# Compute percentages based on returning Allegiant voters
+total_returning_allegiant_voters <- nrow(ReturningAllegiantVoters)
+final_voting_table <- final_voting_table %>%
+  mutate(
+    `Percentage of Allegiant Voters (2024)` = round((Count_2024 / total_returning_allegiant_voters) * 100, 2),
+    `Percentage of Allegiant Voters (Last Vote)` = round((Count_Last / total_returning_allegiant_voters) * 100, 2)
+  )
+
+# Print the formatted table in an easy-to-copy format
+final_voting_table %>%
+  kable(
+    format = "pipe", digits = 2, align = "c",
+    col.names = c("Voting Method", "Count 2024", "% Allegiant Voters (2024)", "Count Last Vote", "% Allegiant Voters (Last Vote)")
+  )
+
+
+
+
+
+
+
+
+library(dplyr)
+
+# Ensure we are only looking at returning Allegiant voters
+ReturningAllegiantVoters <- AllegiantVoters %>%
+  filter(last_voting_method_prior != "No Previous Vote")
+
+# Count the number of voters for each method in 2024 and last vote
+voting_summary <- ReturningAllegiantVoters %>%
+  count(votecode59, name = "Count_2024") %>%
+  rename(`Voting Method` = votecode59)
+
+last_vote_summary <- ReturningAllegiantVoters %>%
+  count(last_voting_method_prior, name = "Count_Last") %>%
+  rename(`Voting Method` = last_voting_method_prior)
+
+# Merge both counts into a single table
+final_voting_table <- full_join(voting_summary, last_vote_summary, by = "Voting Method") %>%
+  replace_na(list(Count_2024 = 0, Count_Last = 0))  # Replace NA with 0
+
+# Compute percentages based on returning Allegiant voters
+total_returning_allegiant_voters <- nrow(ReturningAllegiantVoters)
+
+final_voting_table <- final_voting_table %>%
+  mutate(
+    Percentage_2024 = round((Count_2024 / total_returning_allegiant_voters) * 100, 2),
+    Percentage_Last = round((Count_Last / total_returning_allegiant_voters) * 100, 2)
+  )
+
+# Print the table as a clean, easy-to-copy format
+print(final_voting_table, row.names = FALSE)
+
+
+
+```
+
+Voting Method Count_2024 Count_Last Percentage_2024 Percentage_Last
+PP              	2712	1115	          99.82	   41.04
+PV               	5	     219	          0.18	   8.06
+EV               	0    	628	           0.00	     23.11
+MB              	0	    755	            0.00	     27.79
