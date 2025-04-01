@@ -6,6 +6,9 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+
+
+
 library(tidyverse)
 library(readxl)
 library(dplyr)
@@ -245,8 +248,6 @@ glimpse(AllClarkCountyWide)
 View(AllClarkCountyWide)
 
 AllClarkCountyWide$allegiant <- ifelse(is.na(AllClarkCountyWide$allegiant), 0, 1)
-
-
 
 
 
@@ -2174,8 +2175,1182 @@ print(final_voting_table, row.names = FALSE)
 
 ```
 
+(allegiant as dependent i think)
+I'm wide open to your ideas but my initial thinking is number of times voted, party (dummy for Dem, Rep, other with non-partisan as the excluded), age, and dummies for zipcode. When interpreting results checking the zipcode results, if you get effects,  to see which ones are closest to the stadium would be good. I think voting method when last voted could be interesting too, with previous non-voter as the excluded making some sense. 
+
+
+```{r models}
+
+AllClarkCountyWide <- read_delim("ClarkCo_Nov2024 csv.csv", delim = "\t", col_types = cols(.default = "c"))
+AllClarkCountyWide$allegiant <- ifelse(is.na(AllClarkCountyWide$allegiant), 0, 1)
+colnames(AllClarkCountyWide)
+
+
+table(AllClarkCountyWide$allegiant)
+
+#number of times voted
+
+sapply(AllClarkCountyWide[, c("numtimesvoted_beforeNov2024", 
+                               "numtimesvoted_beforeFeb2024", 
+                               "voted2020_not2022")], function(x) unique(x))
+
+table(AllClarkCountyWide$voted2020_not2022, useNA = "always")
+AllClarkCountyWide$voted2020_not2022 <- ifelse(is.na(AllClarkCountyWide$voted2020_not2022), 0, 1)
+
+AllClarkCountyWide$numtimesvoted_beforeNov2024 <- as.numeric(AllClarkCountyWide$numtimesvoted_beforeNov2024)
+str(AllClarkCountyWide$numtimesvoted_beforeNov2024)  # Should say "num"
+
+AllClarkCountyWide$numtimesvoted_beforeFeb2024 <- as.numeric(AllClarkCountyWide$numtimesvoted_beforeFeb2024)
+
+table(AllClarkCountyWide$numtimesvoted_beforeNov2024)
+
+model_voting_history <- glm(allegiant ~ numtimesvoted_beforeNov2024 + 
+                                          numtimesvoted_beforeFeb2024 + 
+                                          voted2020_not2022, 
+                            data = AllClarkCountyWide, family = binomial)
+summary(model_voting_history)
+
+
+beforenovmodel_voting_history <- glm(allegiant ~ numtimesvoted_beforeNov2024, 
+                            data = AllClarkCountyWide, family = binomial)
+
+summary(beforenovmodel_voting_history)
+
+
+
+##party
+table(AllClarkCountyWide$party)
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    party_Dem = ifelse(party == "Democrat", 1, 0),
+    party_Rep = ifelse(party == "Republican", 1, 0),
+    party_Other = ifelse(!party %in% c("Democratic", "Republican", "Non-Partisan"), 1, 0)
+  )
+
+table(AllClarkCountyWide$party_Dem, useNA = "always")
+table(AllClarkCountyWide$party_Rep)
+
+model_party <- glm(allegiant ~ party_Dem + party_Rep + party_Other, 
+                   data = AllClarkCountyWide, 
+                   family = binomial)
+
+summary(model_party)
+
+
+demmodel_party <- glm(allegiant ~ party_Dem, 
+                   data = AllClarkCountyWide, 
+                   family = binomial)
+
+summary(demmodel_party)
+
+
+
+
+##age
+AllClarkCountyWide$ageEDay <- as.numeric(AllClarkCountyWide$ageEDay)
+
+model_age <- glm(allegiant ~ ageEDay, 
+                data = AllClarkCountyWide, family = binomial)
+summary(model_age)
+
+
+```
+.
+
 Voting Method Count_2024 Count_Last Percentage_2024 Percentage_Last
 PP              	2712	1115	          99.82	   41.04
 PV               	5	     219	          0.18	   8.06
 EV               	0    	628	           0.00	     23.11
 MB              	0	    755	            0.00	     27.79
+
+
+Call:
+glm(formula = allegiant ~ numtimesvoted_beforeNov2024 + numtimesvoted_beforeFeb2024 + 
+    voted2020_not2022, family = binomial, data = AllClarkCountyWide)
+
+Coefficients:
+                            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)                 -5.90292    0.02146 -275.01   <2e-16 ***
+numtimesvoted_beforeNov2024 -0.62190    0.05286  -11.77   <2e-16 ***
+numtimesvoted_beforeFeb2024  0.58771    0.05549   10.59   <2e-16 ***
+voted2020_not2022            0.49729    0.03481   14.29   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 58917  on 1639307  degrees of freedom
+Residual deviance: 58313  on 1639304  degrees of freedom
+AIC: 58321
+
+Number of Fisher Scoring iterations: 9
+
+Call:
+glm(formula = allegiant ~ numtimesvoted_beforeNov2024, family = binomial, 
+    data = AllClarkCountyWide)
+
+Coefficients:
+                             Estimate Std. Error z value Pr(>|z|)    
+(Intercept)                 -5.776174   0.018979 -304.34   <2e-16 ***
+numtimesvoted_beforeNov2024 -0.070909   0.005105  -13.89   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 58917  on 1639307  degrees of freedom
+Residual deviance: 58698  on 1639306  degrees of freedom
+AIC: 58702
+
+Number of Fisher Scoring iterations: 9
+
+
+Call:
+glm(formula = allegiant ~ party_Dem + party_Rep + party_Other, 
+    family = binomial, data = AllClarkCountyWide)
+
+Coefficients:
+            Estimate Std. Error  z value Pr(>|z|)    
+(Intercept) -5.96487    0.02566 -232.438   <2e-16 ***
+party_Dem    0.07518    0.06526    1.152    0.249    
+party_Rep   -0.03455    0.04047   -0.854    0.393    
+party_Other -0.03739    0.06471   -0.578    0.563    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 58535  on 1639275  degrees of freedom
+Residual deviance: 58532  on 1639272  degrees of freedom
+  (32 observations deleted due to missingness)
+AIC: 58540
+
+Number of Fisher Scoring iterations: 8
+
+
+
+demmodel_party <- glm(allegiant ~ party_Dem, 
++                    data = AllClarkCountyWide, 
++                    family = binomial)
+> summary(demmodel_party)
+
+Call:
+glm(formula = allegiant ~ party_Dem, family = binomial, data = AllClarkCountyWide)
+
+Coefficients:
+            Estimate Std. Error  z value Pr(>|z|)    
+(Intercept) -5.98127    0.01882 -317.778   <2e-16 ***
+party_Dem    0.05419    0.03293    1.646   0.0998 .  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 58535  on 1639275  degrees of freedom
+Residual deviance: 58533  on 1639274  degrees of freedom
+  (32 observations deleted due to missingness)
+AIC: 58537
+
+Number of Fisher Scoring iterations: 8
+
+
+
+
+
+
+summary(model_zip)
+
+Call:
+glm(formula = allegiant ~ residentialzip, family = binomial, 
+    data = AllClarkCountyWide)
+
+Coefficients:
+                     Estimate Std. Error z value Pr(>|z|)
+(Intercept)          -18.7176  7216.5815  -0.003    0.998
+residentialzip84901    0.1516  9727.4812   0.000    1.000
+residentialzip89002   12.0405  7216.5815   0.002    0.999
+residentialzip89004   13.2839  7216.5816   0.002    0.999
+residentialzip89005   10.6386  7216.5815   0.001    0.999
+residentialzip89007   12.0120  7216.5816   0.002    0.999
+residentialzip89011   12.2527  7216.5815   0.002    0.999
+residentialzip89012   12.1202  7216.5815   0.002    0.999
+residentialzip89014   12.4527  7216.5815   0.002    0.999
+residentialzip89015   12.1938  7216.5815   0.002    0.999
+residentialzip89018   11.7813  7216.5816   0.002    0.999
+residentialzip89019    0.1516  7218.4020   0.000    1.000
+residentialzip89020    0.1516  9727.4793   0.000    1.000
+residentialzip89021   10.8361  7216.5816   0.002    0.999
+residentialzip89025    0.1516  7219.9650   0.000    1.000
+residentialzip89027    9.1816  7216.5816   0.001    0.999
+residentialzip89029    0.1516  7217.0144   0.000    1.000
+residentialzip89030   12.1412  7216.5815   0.002    0.999
+residentialzip89031   12.2702  7216.5815   0.002    0.999
+residentialzip89032   12.1020  7216.5815   0.002    0.999
+residentialzip89034    0.1516  7217.3140   0.000    1.000
+residentialzip89039    0.1516  7230.8076   0.000    1.000
+residentialzip89040   10.8948  7216.5816   0.002    0.999
+residentialzip89044   12.5917  7216.5815   0.002    0.999
+residentialzip89046    0.1516  7222.9728   0.000    1.000
+residentialzip89048    0.1516  9727.4777   0.000    1.000
+residentialzip89052   12.2567  7216.5815   0.002    0.999
+residentialzip89054    0.1516  7283.2669   0.000    1.000
+residentialzip89070    0.1516  7692.1943   0.000    1.000
+residentialzip89074   12.4763  7216.5815   0.002    0.999
+residentialzip89081   12.1932  7216.5815   0.002    0.999
+residentialzip89084   11.7621  7216.5815   0.002    0.999
+residentialzip89085   12.2726  7216.5815   0.002    0.999
+residentialzip89086   11.7790  7216.5815   0.002    0.999
+residentialzip89091    0.1516  9727.4792   0.000    1.000
+residentialzip89101   12.0582  7216.5815   0.002    0.999
+residentialzip89102   13.2404  7216.5815   0.002    0.999
+residentialzip89103   14.6362  7216.5815   0.002    0.998
+residentialzip89104   12.2383  7216.5815   0.002    0.999
+residentialzip89105    0.1516  8140.0647   0.000    1.000
+residentialzip89106   12.3577  7216.5815   0.002    0.999
+residentialzip89107   12.8381  7216.5815   0.002    0.999
+residentialzip89108   12.3553  7216.5815   0.002    0.999
+residentialzip89109   13.1318  7216.5815   0.002    0.999
+residentialzip89110   12.3031  7216.5815   0.002    0.999
+residentialzip89112    0.1516  8564.5466   0.000    1.000
+residentialzip89113   13.5174  7216.5815   0.002    0.999
+residentialzip89114    0.1516  9727.4793   0.000    1.000
+residentialzip89115   12.1332  7216.5815   0.002    0.999
+residentialzip89117   12.3763  7216.5815   0.002    0.999
+residentialzip89118   15.1965  7216.5815   0.002    0.998
+residentialzip89119   13.0494  7216.5815   0.002    0.999
+residentialzip89120   12.6593  7216.5815   0.002    0.999
+residentialzip89121   12.4630  7216.5815   0.002    0.999
+residentialzip89122   12.2761  7216.5815   0.002    0.999
+residentialzip89123   13.0917  7216.5815   0.002    0.999
+residentialzip89124    0.1516  7221.4281   0.000    1.000
+residentialzip89125    0.1516  9727.4791   0.000    1.000
+residentialzip89128   12.3125  7216.5815   0.002    0.999
+residentialzip89129   12.2948  7216.5815   0.002    0.999
+residentialzip89130   12.2804  7216.5815   0.002    0.999
+residentialzip89131   11.7723  7216.5815   0.002    0.999
+residentialzip89134   11.6700  7216.5815   0.002    0.999
+residentialzip89135   12.0059  7216.5815   0.002    0.999
+residentialzip89138   11.8562  7216.5815   0.002    0.999
+residentialzip89139   13.4813  7216.5815   0.002    0.999
+residentialzip89141   13.1730  7216.5815   0.002    0.999
+residentialzip89142   12.6034  7216.5815   0.002    0.999
+residentialzip89143   11.7345  7216.5815   0.002    0.999
+residentialzip89144   11.7589  7216.5815   0.002    0.999
+residentialzip89145   12.2432  7216.5815   0.002    0.999
+residentialzip89146   12.8550  7216.5815   0.002    0.999
+residentialzip89147   13.2965  7216.5815   0.002    0.999
+residentialzip89148   12.9390  7216.5815   0.002    0.999
+residentialzip89149   12.1087  7216.5815   0.002    0.999
+residentialzip89156   12.3336  7216.5815   0.002    0.999
+residentialzip89158   15.6964  7216.5815   0.002    0.998
+residentialzip89161   12.9277  7216.5816   0.002    0.999
+residentialzip89164    0.1516  8564.5458   0.000    1.000
+residentialzip89166   12.1247  7216.5815   0.002    0.999
+residentialzip89169   13.3272  7216.5815   0.002    0.999
+residentialzip89170    0.1516  9727.4791   0.000    1.000
+residentialzip89178   12.7451  7216.5815   0.002    0.999
+residentialzip89179   12.5437  7216.5815   0.002    0.999
+residentialzip89181    0.1516  9727.4806   0.000    1.000
+residentialzip89183   12.8610  7216.5815   0.002    0.999
+residentialzip89191    0.1516  7692.1940   0.000    1.000
+residentialzip89706    0.1516  9727.4799   0.000    1.000
+residentialzip89886    0.1516  9727.4787   0.000    1.000
+residentialzip95808    0.1516  9727.4819   0.000    1.000
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 58211  on 1624927  degrees of freedom
+Residual deviance: 54642  on 1624838  degrees of freedom
+  (14380 observations deleted due to missingness)
+AIC: 54822
+
+Number of Fisher Scoring iterations: 17
+
+
+
+
+
+```{r age and voting method model}
+
+
+
+
+
+
+##age
+model_age <- glm(allegiant ~ ageEDay, 
+                data = AllClarkCountyWide, family = binomial)
+summary(model_age)
+
+install.packages("biglm")
+library(biglm)
+
+model_age_big <- bigglm(allegiant ~ ageEDay, data = AllClarkCountyWide, family = binomial())
+summary(model_age_big)
+
+
+
+
+
+
+
+
+#vote method
+colnames(AllClarkCountyWide)
+
+table(AllClarkCountyWide$votecode41)
+
+# Select relevant columns
+vote_cols <- paste0("votecode", 41:58)
+
+# Step 1: Find the last vote method for each person before Nov 2024
+filtered_data <- AllClarkCountyWide %>%
+  filter(numtimesvoted_beforeNov2024 > 0) %>%
+  rowwise() %>%
+  mutate(last_vote_method = last(na.omit(c_across(all_of(vote_cols))))) %>%
+  ungroup()
+
+table(filtered_data$last_vote_method, useNA = "ifany")
+
+
+# Step 2: Create Binary Variables for the Last Voting Method
+filtered_data <- filtered_data %>%
+  mutate(
+    last_voted_EV = ifelse(last_vote_method == "EV", 1, 0),
+    last_voted_MB = ifelse(last_vote_method == "MB", 1, 0),
+    last_voted_PP = ifelse(last_vote_method == "PP", 1, 0),
+    last_voted_PV = ifelse(last_vote_method == "PV", 1, 0)
+  )
+
+# Check results
+table(filtered_data$last_vote_method)
+table(filtered_data$last_voted_EV)
+table(filtered_data$last_voted_MB)
+table(filtered_data$last_voted_PP)
+table(filtered_data$last_voted_PV)
+
+table(filtered_data$last_voted_EV, filtered_data$allegiant)
+table(filtered_data$last_voted_MB, filtered_data$allegiant)
+table(filtered_data$last_voted_PP, filtered_data$allegiant)
+table(filtered_data$last_voted_PV, filtered_data$allegiant)
+
+# View structure
+glimpse(filtered_data)
+
+glimpse(filtered_data$allegiant)
+filtered_data <- filtered_data %>%
+  mutate(allegiant = as.numeric(allegiant))  # Convert character to numeric
+
+
+filtered_data <- filtered_data %>%
+  mutate(allegiant = ifelse(is.na(allegiant), 0, 1))  # Convert NA to 0
+
+# Confirm the fix
+table(filtered_data$allegiant, useNA = "ifany")  # Should now have only 1s and 0s
+
+
+# Logistic regression with multiple binary predictors
+lastvotemethodmodel <- glm(allegiant ~ last_voted_EV + last_voted_MB + last_voted_PP, 
+                   data = filtered_data, 
+                   family = binomial(link = "logit"))
+
+# View summary of the model
+summary(lastvotemethodmodel)
+
+
+# Logistic regression with multiple binary predictors
+evmodel <- glm(allegiant ~ last_voted_EV, 
+                   data = filtered_data, 
+                   family = binomial(link = "logit"))
+
+# View summary of the model
+summary(evmodel)
+
+mbmodel <- glm(allegiant ~ last_voted_MB, 
+                   data = filtered_data, 
+                   family = binomial(link = "logit"))
+
+# View summary of the model
+summary(mbmodel)
+
+
+ppmodel <- glm(allegiant ~ last_voted_PP, 
+                   data = filtered_data, 
+                   family = binomial(link = "logit"))
+
+# View summary of the model
+summary(ppmodel)
+
+
+
+table(filtered_data$allegiant, useNA = "ifany")
+prop.table(table(filtered_data$allegiant))
+
+
+table(filtered_data$allegiant, useNA = "ifany")
+
+
+```
+
+Call:
+glm(formula = allegiant ~ ageEDay, family = binomial, data = AllClarkCountyWide)
+
+Coefficients:
+              Estimate Std. Error z value Pr(>|z|)    
+(Intercept) -4.9903112  0.0402766 -123.90   <2e-16 ***
+ageEDay     -0.0222427  0.0009208  -24.16   <2e-16 ***
+---
+Signif. codes:  
+0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 58535  on 1639275  degrees of freedom
+Residual deviance: 57903  on 1639274  degrees of freedom
+  (32 observations deleted due to missingness)
+AIC: 57907
+
+Number of Fisher Scoring iterations: 9
+
+
+Call:
+glm(formula = allegiant ~ last_voted_EV + last_voted_MB + last_voted_PP + 
+    last_voted_PV, family = binomial(link = "logit"), data = filtered_data)
+
+Coefficients:
+              Estimate Std. Error z value Pr(>|z|)
+(Intercept)    -14.566     76.259  -0.191    0.849
+last_voted_EV    8.525     76.259   0.112    0.911
+last_voted_MB    8.066     76.259   0.106    0.916
+last_voted_PP    9.208     76.259   0.121    0.904
+last_voted_PV    9.494     76.259   0.124    0.901
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 37748  on 1040515  degrees of freedom
+Residual deviance: 37015  on 1040511  degrees of freedom
+AIC: 37025
+
+Number of Fisher Scoring iterations: 13
+
+
+
+Call:
+glm(formula = allegiant ~ last_voted_EV + last_voted_MB + last_voted_PP, 
+    family = binomial(link = "logit"), data = filtered_data)
+
+Coefficients:
+              Estimate Std. Error z value Pr(>|z|)    
+(Intercept)   -5.07634    0.06778 -74.890  < 2e-16 ***
+last_voted_EV -0.96500    0.07868 -12.265  < 2e-16 ***
+last_voted_MB -1.42328    0.07695 -18.496  < 2e-16 ***
+last_voted_PP -0.28150    0.07413  -3.797 0.000146 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 37748  on 1040515  degrees of freedom
+Residual deviance: 37017  on 1040512  degrees of freedom
+AIC: 37025
+
+Number of Fisher Scoring iterations: 9
+
+
+
+
+
+
+Call:
+glm(formula = allegiant ~ last_voted_EV, family = binomial(link = "logit"), 
+    data = filtered_data)
+
+Coefficients:
+              Estimate Std. Error  z value Pr(>|z|)    
+(Intercept)   -5.91457    0.02191 -269.990  < 2e-16 ***
+last_voted_EV -0.12678    0.04556   -2.783  0.00539 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 37748  on 1040515  degrees of freedom
+Residual deviance: 37740  on 1040514  degrees of freedom
+AIC: 37744
+
+Number of Fisher Scoring iterations: 8
+
+Call:
+glm(formula = allegiant ~ last_voted_MB, family = binomial(link = "logit"), 
+    data = filtered_data)
+
+Coefficients:
+              Estimate Std. Error z value Pr(>|z|)    
+(Intercept)   -5.60981    0.02262 -248.03   <2e-16 ***
+last_voted_MB -0.88982    0.04287  -20.75   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 37748  on 1040515  degrees of freedom
+Residual deviance: 37270  on 1040514  degrees of freedom
+AIC: 37274
+
+Number of Fisher Scoring iterations: 9
+
+Call:
+glm(formula = allegiant ~ last_voted_PP, family = binomial(link = "logit"), 
+    data = filtered_data)
+
+Coefficients:
+              Estimate Std. Error z value Pr(>|z|)    
+(Intercept)   -6.21476    0.02501 -248.50   <2e-16 ***
+last_voted_PP  0.85692    0.03907   21.93   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 37748  on 1040515  degrees of freedom
+Residual deviance: 37303  on 1040514  degrees of freedom
+AIC: 37307
+
+Number of Fisher Scoring iterations: 9
+
+
+```{r zipcode models}
+
+
+##zipcode
+table(AllClarkCountyWide$residentialzip)
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(across(.cols = residentialzip, 
+                .fns = ~ as.factor(.))) %>%
+  mutate(across(.cols = residentialzip, 
+                .fns = ~ ifelse(. == residentialzip, 1, 0), 
+                .names = "zip_{.}"))
+
+
+model_zip <- glm(allegiant ~ . - residentialzip, 
+                 data = AllClarkCountyWide, 
+                 family = binomial(link = "logit"))
+
+summary(model_zip)
+
+
+AllClarkCountyWide$residentialzip <- as.factor(AllClarkCountyWide$residentialzip)
+
+
+model_zip <- glm(allegiant ~ residentialzip, 
+                 data = AllClarkCountyWide, 
+                 family = binomial)
+
+summary(model_zip)
+
+
+significant_zips <- summary(model_zip)$coefficients %>%
+  as.data.frame() %>%
+  rownames_to_column("variable") %>%
+  filter(`Pr(>|z|)` < 0.05 & grepl("residentialzip", variable))
+
+print(significant_zips)
+
+
+
+
+zip_codes <- unique(AllClarkCountyWide$residentialzip)  # Get all unique zip codes
+zip_results <- data.frame(ZipCode = character(), Estimate = numeric(), PValue = numeric())
+
+for (zip in zip_codes) {
+  model <- glm(allegiant ~ (residentialzip == zip), 
+               data = AllClarkCountyWide, 
+               family = binomial)
+  
+  summary_model <- summary(model)
+  estimate <- summary_model$coefficients[2, 1]  # Coefficient for the zip code
+  p_value <- summary_model$coefficients[2, 4]   # P-value for the zip code
+  
+  zip_results <- rbind(zip_results, data.frame(ZipCode = zip, Estimate = estimate, PValue = p_value))
+}
+
+# View only significant zip codes
+significant_zips <- zip_results %>% filter(PValue < 0.05)
+print(significant_zips)
+
+
+
+
+
+
+# Count number of 0s and 1s for allegiant in each zip code
+zip_counts <- AllClarkCountyWide %>%
+  group_by(residentialzip) %>%
+  summarize(count_0 = sum(allegiant == 0, na.rm = TRUE),
+            count_1 = sum(allegiant == 1, na.rm = TRUE),
+            total = n()) %>%
+  ungroup()
+
+# Keep only zip codes that have at least 10 votes and both 0s and 1s
+valid_zips <- zip_counts %>%
+  filter(count_0 > 0 & count_1 > 0 & total >= 10) %>%
+  pull(residentialzip)
+
+zip_results <- data.frame(ZipCode = character(), Estimate = numeric(), PValue = numeric())
+
+for (zip in valid_zips) {
+  model <- glm(allegiant ~ I(residentialzip == zip), 
+               data = AllClarkCountyWide, 
+               family = binomial)
+  
+  summary_model <- summary(model)
+  estimate <- summary_model$coefficients[2, 1]  # Coefficient for the zip code
+  p_value <- summary_model$coefficients[2, 4]   # P-value for the zip code
+  
+  zip_results <- rbind(zip_results, data.frame(ZipCode = zip, Estimate = estimate, PValue = p_value))
+}
+
+# View only significant zip codes
+significant_zips <- zip_results %>% filter(PValue < 0.1)
+print(significant_zips)
+
+
+
+
+
+# Count number of 0s and 1s for allegiant in each zip code
+zip_counts <- AllClarkCountyWide %>%
+  group_by(residentialzip) %>%
+  summarize(count_0 = sum(allegiant == 0, na.rm = TRUE),
+            count_1 = sum(allegiant == 1, na.rm = TRUE),
+            total = n()) %>%
+  ungroup()
+
+# Print zip codes where there are only 0s or only 1s (these cause glm() errors)
+zip_counts %>%
+  filter(count_0 == 0 | count_1 == 0) %>%
+  print()
+
+valid_zips <- zip_counts %>%
+  filter(count_0 > 0 & count_1 > 0 & total >= 10) %>%
+  pull(residentialzip)
+
+length(valid_zips)  # Check how many zip codes are left
+
+zip_results <- data.frame(ZipCode = character(), Estimate = numeric(), PValue = numeric())
+
+for (zip in valid_zips) {
+  tryCatch({
+    model <- glm(allegiant ~ I(residentialzip == zip), 
+                 data = AllClarkCountyWide, 
+                 family = binomial)
+    
+    summary_model <- summary(model)
+    estimate <- summary_model$coefficients[2, 1]  # Coefficient for the zip code
+    p_value <- summary_model$coefficients[2, 4]   # P-value for the zip code
+    
+    zip_results <- rbind(zip_results, data.frame(ZipCode = zip, Estimate = estimate, PValue = p_value))
+  }, error = function(e) {
+    message("Skipping zip code ", zip, " due to an error.")
+  })
+}
+
+
+significant_zips <- zip_results %>% filter(PValue < 0.05)
+print(significant_zips)
+
+
+write.csv(significant_zips, "significant_zipcodes.csv", row.names = FALSE)
+
+significant_zips <- read_csv("significant_zipcodes.csv") 
+
+
+View(significant_zips)  # Opens a scrollable data viewer in RStudio
+
+print(significant_zips$ZipCode)
+
+
+
+
+
+
+
+library(ggplot2)
+library(dplyr)
+
+# Create a summary table
+significant_zips %>%
+  arrange(PValue) %>%
+  select(ZipCode, Estimate, PValue) %>%
+  head(20)  # Show the top 20 significant zip codes
+
+
+
+
+
+
+
+
+
+
+
+
+
+install.packages("sf")
+library(sf)
+setwd("C:/Users/izzoe/Documents/GitHub/CDCE/NVVoters")
+
+faces <- st_read("C:/Users/izzoe/Documents/GitHub/CDCE/NVVoters/tl_2023_32003_faces/tl_2023_32003_faces.shp")
+
+file.exists("C:/Users/izzoe/Documents/GitHub/CDCE/NVVoters/tl_2023_32003_faces/tl_2023_32003_faces.shp")
+
+# View column names
+colnames(faces)
+
+# Check first few rows
+head(faces)
+
+# Check the geometry type
+st_geometry_type(faces)
+
+library(sf)
+library(dplyr)
+
+# **1. Extract ZIP Code areas**
+zip_areas <- faces %>% 
+  select(ZCTA5CE20, geometry) %>% 
+  filter(!is.na(ZCTA5CE20))  # Remove any missing ZIP codes
+
+# Convert ZIP codes to character type
+zip_areas$ZCTA5CE20 <- as.character(zip_areas$ZCTA5CE20)
+
+# **2. Compute centroids for each ZIP Code area**
+zip_centroids <- zip_areas %>%
+  mutate(geometry = st_centroid(geometry)) %>%  # Compute centroids directly
+  st_as_sf()  # Ensure it's an sf object
+
+# **3. Define Allegiant Stadium's location as a single-point geometry**
+allegiant_stadium_geom <- st_sfc(st_point(c(-115.183, 36.090)), crs = st_crs(zip_centroids))
+
+# **4. Compute distance from each ZIP centroid to Allegiant Stadium**
+zip_centroids$distance_to_stadium <- as.numeric(st_distance(zip_centroids, 
+                                                            allegiant_stadium_geom)) / 1609.34  # Convert meters to miles
+
+# **5. Verify the results**
+head(zip_centroids$distance_to_stadium)
+summary(zip_centroids$distance_to_stadium)
+
+
+
+
+
+
+# Check structure of zip_centroids
+print(zip_centroids)
+print(class(zip_centroids))  # Should be 'sf' or 'data.frame'
+print(nrow(zip_centroids))   # Should be >1
+
+# Check structure of allegiant_stadium_geom
+print(allegiant_stadium_geom)
+print(class(allegiant_stadium_geom))  # Should be 'sfc' or 'sf'
+print(length(allegiant_stadium_geom))  # Should be 1
+
+# Test a single zip centroid against Allegiant Stadium
+test_distance <- st_distance(zip_centroids[1, ], allegiant_stadium_geom)
+
+print(test_distance)
+
+allegiant_stadium_geom <- st_sfc(st_point(c(-115.183, 36.090)), crs = st_crs(zip_centroids))
+
+# Re-run test
+st_distance(zip_centroids[1, ], allegiant_stadium_geom)
+
+zip_centroids$distance_to_stadium <- as.numeric(st_distance(zip_centroids, allegiant_stadium_geom)) / 1609.34
+
+# Check first few distance values
+head(zip_centroids$distance_to_stadium)
+
+# Summary of distance values (to make sure they look reasonable)
+summary(zip_centroids$distance_to_stadium)
+
+
+
+
+
+
+
+
+
+#ZipMapClarkCountyWide <- AllClarkCountyWide %>%
+#  left_join(zip_centroids %>% st_drop_geometry(), 
+#            by = c("residentialzip" = "ZCTA5CE20"))
+
+
+# Drop unnecessary columns before merging
+zip_distances <- zip_centroids %>%
+  st_drop_geometry() %>%
+  select(ZCTA5CE20, distance_to_stadium)  # Keep only ZIP code and distance
+
+# Check memory usage of new object
+print(object.size(zip_distances), units = "GB")
+
+
+library(data.table)
+
+# Convert to data.table format for efficient merging
+setDT(AllClarkCountyWide)
+setDT(zip_distances)
+
+# Merge using data.table (faster than dplyr)
+ZipMapClarkCountyWide <- merge(AllClarkCountyWide, zip_distances, 
+                            by.x = "residentialzip", 
+                            by.y = "ZCTA5CE20", 
+                            all.x = TRUE)
+
+# Convert back to data.frame if needed
+setDF(AllClarkCountyWide)
+
+
+
+
+
+zip_dupes <- zip_centroids %>%
+  st_drop_geometry() %>%
+  count(ZCTA5CE20) %>%
+  filter(n > 1)
+
+print(zip_dupes)
+
+
+zip_centroids <- zip_centroids %>%
+  st_drop_geometry() %>%
+  group_by(ZCTA5CE20) %>%
+  summarize(distance_to_stadium = mean(distance_to_stadium, na.rm = TRUE)) %>%
+  ungroup()
+
+
+
+setDT(AllClarkCountyWide)
+setDT(zip_centroids)
+
+# Merge using data.table with optimized memory
+ZipMapClarkCountyWide <- merge(AllClarkCountyWide, zip_centroids, 
+                               by.x = "residentialzip", 
+                               by.y = "ZCTA5CE20", 
+                               all.x = TRUE)
+
+
+
+summary(ZipMapClarkCountyWide$distance_to_stadium)
+head(ZipMapClarkCountyWide)
+
+
+
+str(ZipMapClarkCountyWide)
+ZipMapClarkCountyWide$allegiant <- as.numeric(as.character(ZipMapClarkCountyWide$allegiant))
+
+
+ZipMapClarkCountyWide$allegiant[is.na(ZipMapClarkCountyWide$allegiant)] <- 0
+
+
+table(ZipMapClarkCountyWide$allegiant)
+prop.table(table(ZipMapClarkCountyWide$allegiant))  # Check proportions
+
+
+
+
+
+
+
+
+model_distance <- glm(allegiant ~ distance_to_stadium, 
+                      data = ZipMapClarkCountyWide, 
+                      family = binomial)
+
+summary(model_distance)
+
+
+library(ggplot2)
+
+ggplot(ZipMapClarkCountyWide, aes(x = distance_to_stadium, y = allegiant)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "glm", method.args = list(family = binomial), color = "red") +
+  labs(title = "Probability of Voting at Allegiant Stadium by Distance",
+       x = "Distance to Allegiant Stadium (miles)",
+       y = "Probability of Voting") +
+  theme_minimal()
+
+
+
+
+
+
+ZipVoteSummary <- ZipMapClarkCountyWide %>%
+  group_by(residentialzip) %>%
+  summarize(
+    total_voters = n(),
+    allegiant_voters = sum(allegiant),
+    percent_allegiant = allegiant_voters / total_voters * 100,
+    avg_distance = mean(distance_to_stadium, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+
+
+ggplot(ZipVoteSummary, aes(x = avg_distance, y = percent_allegiant)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red") +  # Linear trendline
+  labs(
+    title = "Percentage of Voters Using Allegiant Stadium by Distance",
+    x = "Average Distance to Allegiant Stadium (miles)",
+    y = "Percentage of Voters at Allegiant Stadium"
+  ) +
+  theme_minimal()
+
+ggplot(ZipVoteSummary, aes(x = avg_distance, y = percent_allegiant, label = residentialzip)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red") +  # Linear trendline
+  geom_text(vjust = -0.5, size = 3, check_overlap = TRUE) +  # Add ZIP code labels
+  labs(
+    title = "Percentage of Voters Using Allegiant Stadium by Distance",
+    x = "Average Distance to Allegiant Stadium (miles)",
+    y = "Percentage of Voters at Allegiant Stadium"
+  ) +
+  theme_minimal()
+
+
+
+
+
+
+
+ggplot(ZipVoteSummary, aes(x = avg_distance, y = percent_allegiant)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", color = "blue") +  # Smooth nonlinear trend
+  labs(
+    title = "Percentage of Voters Using Allegiant Stadium by Distance",
+    x = "Average Distance to Allegiant Stadium (miles)",
+    y = "Percentage of Voters at Allegiant Stadium"
+  ) +
+  theme_minimal()
+
+
+
+
+ggplot(ZipVoteSummary, aes(x = avg_distance, y = percent_allegiant, label = residentialzip)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", color = "blue") +  # Nonlinear smoother
+  geom_text(vjust = -0.5, size = 3, check_overlap = TRUE) +  # Add ZIP code labels
+  labs(
+    title = "Percentage of Voters Using Allegiant Stadium by Distance",
+    x = "Average Distance to Allegiant Stadium (miles)",
+    y = "Percentage of Voters at Allegiant Stadium"
+  ) +
+  theme_minimal()
+
+
+ggplot(ZipVoteSummary, aes(x = avg_distance, y = percent_allegiant, label = residentialzip)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", color = "blue", span = 0.6) +  # Slightly wider smoothing window
+  geom_text(vjust = -0.5, size = 3, check_overlap = TRUE) +  
+  labs(
+    title = "Percentage of Voters Using Allegiant Stadium by Distance",
+    x = "Average Distance to Allegiant Stadium (miles)",
+    y = "Percentage of Voters at Allegiant Stadium"
+  ) +
+  theme_minimal()
+
+
+
+model_logit <- glm(cbind(allegiant_voters, total_voters - allegiant_voters) ~ avg_distance, 
+                   family = binomial, data = ZipVoteSummary)
+
+ggplot(ZipVoteSummary, aes(x = avg_distance, y = percent_allegiant / 100)) +
+  geom_point(alpha = 0.5) +
+  stat_smooth(method = "glm", method.args = list(family = "binomial"), color = "red") +
+  geom_text(vjust = -0.5, size = 3, check_overlap = TRUE) +
+  labs(
+    title = "Logistic Model of Allegiant Stadium Voting by Distance",
+    x = "Average Distance to Allegiant Stadium (miles)",
+    y = "Proportion of Voters at Allegiant Stadium"
+  ) +
+  theme_minimal()
+
+
+
+
+
+
+distance_percentage <- lm(percent_allegiant ~ avg_distance, data = ZipVoteSummary)
+summary(distance_percentage)
+
+
+
+```
+Call:
+glm(formula = allegiant ~ distance_to_stadium, family = binomial, 
+    data = ZipMapClarkCountyWide)
+
+Coefficients:
+                    Estimate Std. Error z value Pr(>|z|)    
+(Intercept)         -4.33889    0.03754 -115.57   <2e-16 ***
+distance_to_stadium -0.21072    0.00524  -40.22   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 58211  on 1624908  degrees of freedom
+Residual deviance: 56149  on 1624907  degrees of freedom
+  (14399 observations deleted due to missingness)
+AIC: 56153
+
+Number of Fisher Scoring iterations: 10
+
+
+
+Linear
+
+Call:
+lm(formula = percent_allegiant ~ avg_distance, data = ZipVoteSummary)
+
+Residuals:
+    Min      1Q  Median      3Q     Max 
+-0.3365 -0.2038 -0.1618  0.0071  4.2160 
+
+Coefficients:
+              Estimate Std. Error t value Pr(>|t|)    
+(Intercept)   0.440106   0.096073   4.581 1.87e-05 ***
+avg_distance -0.009085   0.003849  -2.361   0.0209 *  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 0.6155 on 73 degrees of freedom
+  (16 observations deleted due to missingness)
+Multiple R-squared:  0.07093,	Adjusted R-squared:  0.0582 
+F-statistic: 5.573 on 1 and 73 DF,  p-value: 0.02091
+
+
+
+```{r first time voters}
+
+colnames(AllClarkCountyWide)
+
+
+# Filter first-time voters in November 2024
+first_time_voters <- AllClarkCountyWide %>%
+  filter(numtimesvoted_beforeNov2024 == 0)
+
+# Create subsets for those who voted at Allegiant and those who didn't
+first_time_voters_allegiant <- first_time_voters %>%
+  filter(allegiant == 1)  # Assuming 1 means voted at Allegiant
+
+first_time_voters_not_allegiant <- first_time_voters %>%
+  filter(allegiant == 0)  # Assuming 0 means did not vote at Allegiant
+
+# Check the counts
+nrow(first_time_voters)
+nrow(first_time_voters_allegiant)
+nrow(first_time_voters_not_allegiant)
+
+# Save subsets if needed
+write.csv(first_time_voters, "first_time_voters_Nov2024.csv", row.names = FALSE)
+write.csv(first_time_voters_allegiant, "first_time_voters_Allegiant.csv", row.names = FALSE)
+write.csv(first_time_voters_not_allegiant, "first_time_voters_Not_Allegiant.csv", row.names = FALSE)
+
+
+
+
+####Party 
+
+# Create dummy variables correctly
+first_time_voters <- first_time_voters %>%
+  mutate(
+    party_Dem = ifelse(party == "Democrat", 1, 0),
+    party_Rep = ifelse(party == "Republican", 1, 0),
+    party_Other = ifelse(!(party %in% c("Democratic", "Republican", "Non-Partisan")), 1, 0) # Exclude Dems & Reps properly
+  )
+
+# Check table outputs again
+table(first_time_voters$party, first_time_voters$party_Dem)
+table(first_time_voters$party, first_time_voters$party_Rep)
+table(first_time_voters$party, first_time_voters$party_Other)
+
+
+
+
+
+
+partyfirsttime <- glm(allegiant ~ party_Dem + party_Rep + party_Other, 
+                      data = first_time_voters, 
+                      family = binomial)
+
+# Model Summary
+summary(partyfirsttime)
+
+
+
+####age
+first_time_voters$ageEDay <- as.numeric(first_time_voters$ageEDay)
+
+age_model <- glm(allegiant ~ ageEDay, 
+                 data = first_time_voters, 
+                 family = binomial)
+
+# Model Summary
+summary(age_model)
+
+
+View(AllClarkCountyWide)
+```
+First time voter party
+Call:
+glm(formula = allegiant ~ party_Dem + party_Rep + party_Other, 
+    family = binomial, data = first_time_voters)
+
+Coefficients:
+            Estimate Std. Error  z value Pr(>|z|)    
+(Intercept) -6.16868    0.03653 -168.872   <2e-16 ***
+party_Dem    0.14358    0.12108    1.186    0.236    
+party_Rep    0.65795    0.06483   10.149   <2e-16 ***
+party_Other  0.07885    0.11223    0.703    0.482    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 20785  on 598759  degrees of freedom
+Residual deviance: 20689  on 598756  degrees of freedom
+  (32 observations deleted due to missingness)
+AIC: 20697
+
+Number of Fisher Scoring iterations: 9
+
+
+
+
+
+summary(age_model)
+
+Call:
+glm(formula = allegiant ~ ageEDay, family = binomial, data = first_time_voters)
+
+Coefficients:
+             Estimate Std. Error z value Pr(>|z|)    
+(Intercept) -5.563021   0.066272 -83.943  < 2e-16 ***
+ageEDay     -0.011577   0.001691  -6.844 7.69e-12 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 20785  on 598759  degrees of freedom
+Residual deviance: 20735  on 598758  degrees of freedom
+  (32 observations deleted due to missingness)
+AIC: 20739
+
+Number of Fisher Scoring iterations: 9
+

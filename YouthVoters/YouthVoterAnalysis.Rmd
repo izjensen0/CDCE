@@ -61,24 +61,88 @@ colnames(final_data)
 
 final_data <- final_data %>%
   mutate(sixteenlicensepercent = ((age16) / est_16_or_17_or_18_yo_2023.x)*100)
-
+summary(final_data$sixteenlicensepercent)
 
 final_data <- final_data %>%
   mutate(seventeenlicensepercent = ((age17) / est_16_or_17_or_18_yo_2023.x)*100)
-
+summary(final_data$seventeenlicensepercent)
 
 final_data <- final_data %>%
   mutate(sixandseventeenlicensepercent = (((age16+age17) / (2*est_16_or_17_or_18_yo_2023.x))*100))
-
+summary(final_data$sixandseventeenlicensepercent)
 
 final_data <- final_data %>%
   mutate(eighteenlicensepercent = ((age18) / est_16_or_17_or_18_yo_2023.x)*100)
+summary(final_data$eighteenlicensepercent)
 
 
 
-write.csv(final_data, "youthvoters2021.csv", row.names = FALSE)
+
+
+final_data <- final_data %>%
+  mutate(allyouthlicensepercent = (((age16 + age17 + age18) / (est_16_or_17_or_18_yo_2023.x * 3)) * 100))
+
+
+
+summary(final_data$allyouthlicensepercent)
+
+
+
+
+
+statewide_youth_license_percent <- sum(final_data$age16 + final_data$age17 + final_data$age18, na.rm = TRUE) / 
+                                  (sum(final_data$est_16_or_17_or_18_yo_2023.x, na.rm = TRUE) * 3) * 100
+
+print(statewide_youth_license_percent)
+
+
+# Calculate total licensed for each age group
+total_age16 <- sum(final_data$age16, na.rm = TRUE)
+total_age17 <- sum(final_data$age17, na.rm = TRUE)
+total_age18 <- sum(final_data$age18, na.rm = TRUE)
+
+# Calculate total estimated population for one age group across all counties
+total_est_population <- sum(final_data$est_16_or_17_or_18_yo_2023.x, na.rm = TRUE)
+
+# Compute statewide percentages
+statewide_sixteen_license_percent <- (total_age16 / total_est_population) * 100
+statewide_seventeen_license_percent <- (total_age17 / total_est_population) * 100
+statewide_eighteen_license_percent <- (total_age18 / total_est_population) * 100
+
+# Print results
+statewide_sixteen_license_percent
+statewide_seventeen_license_percent
+statewide_eighteen_license_percent
+
+
+
+
 
 ```
+percent_16_with_license
+<dbl>2.322421
+percent_17_with_license
+<dbl>	32.1355
+percent_18_with_license
+<dbl>51.80923
+percent_all_youth_with_license
+<dbl>86.26718
+		
+		
+		summary(final_data$sixteenlicensepercent)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+ 0.5383  2.5317  3.3501  3.3084  4.0721  6.8627 
+ summary(final_data$seventeenlicensepercent)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  10.01   32.03   39.64   38.71   45.97   59.05 
+ summary(final_data$eighteenlicensepercent)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  21.27   51.26   59.02   57.78   65.78   77.15 
+ final_data <- final_data %>%
+ mutate(allyouthlicensepercent = ((age16 + age17 + age18) / est_16_or_17_or_18_yo_2023.x) * 100)
+summary(final_data$allyouthlicensepercent)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  31.83   87.10  103.47   99.80  116.88  141.10 
 
 ```{r 2021 bivariate no controls}
 colnames(final_data)
@@ -191,7 +255,78 @@ summary(eighteencontrols2023)
 youth2023 <- read_csv("youthvoters2023.csv")
 write.csv(data2023, "youthvoters2023.csv", row.names = FALSE)
 
+
+summary(data2023$seventeenlicensepercent2023)
+summary(data2023$eighteenlicensepercent2023)
+
+
+
+state_summary <- data2023 %>%
+  summarise(
+    total_est_youth = sum(est_16_or_17_or_18_yo_2023.x, na.rm = TRUE),
+    total_age16 = sum(age16, na.rm = TRUE),
+    total_age17 = sum(age17, na.rm = TRUE),
+    total_age18 = sum(age18, na.rm = TRUE)
+  )
+
+state_summary <- state_summary %>%
+  mutate(
+    percent_16_with_license = (total_age16 / total_est_youth) * 100,
+    percent_17_with_license = (total_age17 / total_est_youth) * 100,
+    percent_18_with_license = (total_age18 / total_est_youth) * 100,
+    percent_all_youth_with_license = ((total_age16 + total_age17 + total_age18) / total_est_youth) * 100
+  )
+
+
+data2023 <- data2023 %>%
+  mutate(sevenandeightteenlicensepercent = (((age17+age18) / (2*est_16_or_17_or_18_yo_2023.x))*100))
+
+summary(data2023$sevenandeightteenlicensepercent)
+
+state_summary <- data2023 %>%
+  summarise(
+    total_est_youth_17_18 = sum(est_16_or_17_or_18_yo_2023.x, na.rm = TRUE) * (2/3),  # Approximate 17-18 population
+    total_17_18_with_license = sum(age17 + age18, na.rm = TRUE)  # Total 17-18 licenses
+  )
+state_summary <- state_summary %>%
+  mutate(percent_17_18_with_license = (total_17_18_with_license / total_est_youth_17_18) * 100)
+
+print(state_summary)
+
+
+state_summary <- final_data %>%
+  summarise(
+    total_est_youth_17_18 = sum(est_16_or_17_or_18_yo_2023.x, na.rm = TRUE) * (2/3),  # Approximate 17-18 population
+    total_17_18_with_license = sum(age17 + age18, na.rm = TRUE)  # Total licenses for 17-18 year olds
+  )
+state_summary <- state_summary %>%
+  mutate(percent_17_18_with_license = (total_17_18_with_license / total_est_youth_17_18) * 100)
+print(state_summary)
+
+
 ```
+percent_17_with_license
+<dbl>
+percent_18_with_license
+<dbl>
+percent_all_youth_with_license
+<dbl>
+0	26.56452	49.27406	75.83858
+
+
+
+
+2023 seventeen 
+ Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  8.089  26.479  33.225  33.318  41.429  53.561 
+ 2023 eighteen
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  19.57   46.70   57.21   54.88   64.02   71.66 
+  
+  17 and 18
+    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  13.83   35.82   46.31   44.10   52.08   62.61 
+  
 ```{r graphs}
 
 colnames(final_data)
@@ -283,5 +418,9 @@ ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_o
   labs(x = "Percent of 18 Year Olds with License", 
        y = "Registration Percentage of 18 Year Olds", 
        title = "Relationship Between 18 Year Old License Holding and Registration")
+
+
+
+
 
 ```
