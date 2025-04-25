@@ -23,6 +23,8 @@ library(gt)
 library(kableExtra)
 library(ggplot2)
 
+library(tidygeocoder)
+
 #rm(list = ls())
 
 ```
@@ -360,7 +362,7 @@ agecat                   0               1               Total
 
 
 
-```{r more analysis}
+```{r more analysis age party}
 
 table(AllClarkCountyWide$agecat, AllClarkCountyWide$allegiant)
 prop.table(table(AllClarkCountyWide$agecat, AllClarkCountyWide$allegiant), margin = 2)  # Column percentages
@@ -657,7 +659,7 @@ Other Voter   	47.39189	18.5357 	18   	122  	1635074
 
 
 
-```{r provisional included}
+```{r provisional included age party binary}
 
 # Create new column to classify voters
 AllClarkCountyWide <- AllClarkCountyWide %>%
@@ -3354,3 +3356,468 @@ AIC: 20739
 
 Number of Fisher Scoring iterations: 9
 
+```{r vote type}
+
+table(AllClarkCountyWide$votecode59)
+table(AllClarkCountyWide$allegiant)
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    vote_type = case_when(
+      votecode59 == "PP" & allegiant == "1" ~ "Allegiant",
+      votecode59 == "PP" & allegiant != "1" ~ "OtherInPerson",
+      votecode59 %in% c("EV", "MB") ~ "EarlyMail",
+      TRUE ~ "Nonvoter"
+    )
+  )
+
+table(AllClarkCountyWide$vote_type)
+
+
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    allegiantandinperson = case_when(
+      votecode59 == "PP" & allegiant == "1" ~ 1,
+      votecode59 == "PP" & allegiant != "1" ~ 0,
+      TRUE ~ NA_real_
+    )
+  )
+
+table(AllClarkCountyWide$allegiantandinperson)
+
+
+library(nnet)
+
+AllClarkCountyWide$vote_type <- relevel(factor(AllClarkCountyWide$vote_type), ref = "EarlyMail")
+
+multi_model <- multinom(
+  vote_type ~ ageEDay + party_Rep + reg_length + regcat + numtimesvoted_beforeNov2024,
+  data = AllClarkCountyWide
+)
+summary(multi_model)
+
+# Get summary
+summary_model <- summary(multi_model)
+
+# Extract coefficients and standard errors
+coefs <- summary_model$coefficients
+ses <- summary_model$standard.errors
+
+# Calculate z-values and p-values
+z_values <- coefs / ses
+p_values <- 2 * (1 - pnorm(abs(z_values)))  # two-tailed test
+
+# Put them in a data frame for easy viewing
+library(dplyr)
+results <- as.data.frame(cbind(coefs, ses, z_values, p_values))
+names(results) <- c("Estimate", "Std.Error", "z", "p")
+results
+
+
+
+
+library(nnet)
+
+# Fit your model again just for clarity
+multi_model <- multinom(vote_type ~ ageEDay + party_Rep + reg_length + regcat + numtimesvoted_beforeNov2024,
+                        data = AllClarkCountyWide)
+
+# Get summary
+s <- summary(multi_model)
+
+# Extract coefficients and standard errors
+coefs <- s$coefficients
+ses <- s$standard.errors
+
+# Calculate z and p-values
+z_vals <- coefs / ses
+p_vals <- 2 * (1 - pnorm(abs(z_vals)))
+
+# Combine everything into a tidy table (long format)
+library(tibble)
+library(tidyr)
+
+results_df <- as.data.frame(coefs) %>%
+  rownames_to_column("Category") %>%
+  pivot_longer(-Category, names_to = "Variable", values_to = "Estimate") %>%
+  mutate(
+    Std.Error = as.vector(ses),
+    z = Estimate / Std.Error,
+    p = 2 * (1 - pnorm(abs(z)))
+  )
+
+# View nicely
+print(results_df)
+
+
+
+
+library(VGAM)
+model <- vglm(vote_type ~ ageEDay + party_Rep, family = multinomial(), data = AllClarkCountyWide)
+summary(model)
+
+
+
+# Relevel vote_type to make Allegiant the reference
+AllClarkCountyWide$vote_type <- relevel(factor(AllClarkCountyWide$vote_type), ref = "Allegiant")
+
+# Fit the model again
+library(VGAM)
+model_allegiant_ref <- vglm(
+  vote_type ~ ageEDay + party_Rep,
+  family = multinomial(),
+  data = AllClarkCountyWide
+)
+
+summary(model_allegiant_ref)
+
+
+
+model_allegiant_ref2 <- vglm(
+  vote_type ~ ageEDay + party_Rep+party_Dem+numtimesvoted_beforeNov2024,
+  family = multinomial(),
+  data = AllClarkCountyWide
+)
+
+summary(model_allegiant_ref2)
+
+
+
+vote_cols <- paste0("votecode", 41:58)
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  filter(numtimesvoted_beforeNov2024 > 0) %>%
+  rowwise() %>%
+  mutate(last_vote_method = last(na.omit(c_across(all_of(vote_cols))))) %>%
+  ungroup()
+
+table(AllClarkCountyWide$last_vote_method, useNA = "ifany")
+
+# Create dummy variables for last vote method
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    last_voted_EV = ifelse(last_vote_method == "EV", 1, 0),
+    last_voted_MB = ifelse(last_vote_method == "MB", 1, 0),
+    last_voted_PP = ifelse(last_vote_method == "PP", 1, 0),
+    last_voted_PV = ifelse(last_vote_method == "PV", 1, 0)
+  )
+
+
+
+model_allegiant_ref3 <- vglm(
+  vote_type ~ ageEDay + party_Rep+party_Dem+last_voted_EV+last_voted_MB+last_voted_PP+numtimesvoted_beforeNov2024,
+  family = multinomial(),
+  data = AllClarkCountyWide
+)
+summary(model_allegiant_ref3)
+
+
+```
+
+
+Early/mail as reference category
+
+Call:
+vglm(formula = vote_type ~ ageEDay + party_Rep, family = multinomial(), 
+    data = AllClarkCountyWide)
+
+Coefficients: 
+                Estimate Std. Error  z value Pr(>|z|)    
+(Intercept):1 -0.0823347  0.0073074  -11.267  < 2e-16 ***
+(Intercept):2 -3.6313096  0.0429904  -84.468  < 2e-16 ***
+(Intercept):3  1.2845597  0.0072181  177.963  < 2e-16 ***
+ageEDay:1      0.0340060  0.0001571  216.422  < 2e-16 ***
+ageEDay:2     -0.0034301  0.0009877   -3.473 0.000515 ***
+ageEDay:3      0.0030416  0.0001615   18.830  < 2e-16 ***
+party_Rep:1    0.0725402  0.0060225   12.045  < 2e-16 ***
+party_Rep:2   -0.1568570  0.0384610   -4.078 4.54e-05 ***
+party_Rep:3   -0.7144848  0.0064688 -110.452  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Names of linear predictors: log(mu[,1]/mu[,4]), log(mu[,2]/mu[,4]), log(mu[,3]/mu[,4])
+
+Residual deviance: 2991363 on 4917819 degrees of freedom
+
+Log-likelihood: -1495681 on 4917819 degrees of freedom
+
+Number of Fisher scoring iterations: 9 
+
+Warning: Hauck-Donner effect detected in the following estimate(s):
+'(Intercept):2'
+
+
+Reference group is level  4  of the response
+
+
+
+
+allegiant as reference group 
+
+Call:
+vglm(formula = vote_type ~ ageEDay + party_Rep, family = multinomial(), 
+    data = AllClarkCountyWide)
+
+Coefficients: 
+                Estimate Std. Error  z value Pr(>|z|)    
+(Intercept):1 -3.6313095  0.0429904  -84.468  < 2e-16 ***
+(Intercept):2 -0.0823347  0.0073074  -11.267  < 2e-16 ***
+(Intercept):3  1.2845597  0.0072181  177.963  < 2e-16 ***
+ageEDay:1     -0.0034301  0.0009877   -3.473 0.000515 ***
+ageEDay:2      0.0340060  0.0001571  216.422  < 2e-16 ***
+ageEDay:3      0.0030416  0.0001615   18.830  < 2e-16 ***
+party_Rep:1   -0.1568570  0.0384610   -4.078 4.54e-05 ***
+party_Rep:2    0.0725402  0.0060225   12.045  < 2e-16 ***
+party_Rep:3   -0.7144848  0.0064688 -110.452  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Names of linear predictors: log(mu[,1]/mu[,4]), log(mu[,2]/mu[,4]), log(mu[,3]/mu[,4])
+
+Residual deviance: 2991363 on 4917819 degrees of freedom
+
+Residual deviance: 2991363 on 4917819 degrees of freedom
+
+Log-likelihood: -1495681 on 4917819 degrees of freedom
+
+Number of Fisher scoring iterations: 9 
+
+Warning: Hauck-Donner effect detected in the following estimate(s):
+'(Intercept):1'
+
+
+Reference group is level  4  of the response
+
+
+EarlyMail vs Allegiant	-0.0034	Older people are less likely to vote EarlyMail than vote at Allegiant.
+OtherInPerson vs Allegiant	+0.0340	Older people are more likely to vote at other in-person polling places than at Allegiant.
+Nonvoter vs Allegiant	+0.0030	Older people are slightly more likely not to vote than vote at Allegiant.
+
+EarlyMail vs Allegiant	-0.157	Republicans are less likely to vote EarlyMail than vote at Allegiant.
+OtherInPerson vs Allegiant	+0.073	Republicans are slightly more likely to vote at other in-person locations than vote at Allegiant.
+Nonvoter vs Allegiant	-0.714	Republicans are much less likely to be nonvoters than vote at Allegiant.
+
+EarlyMail voters tend to be older and less Republican
+
+Other In-Person voters are older and slightly more Republican
+
+Nonvoters are slightly older, but much less likely to be Republican
+
+
+
+
+
+
+Call:
+vglm(formula = vote_type ~ ageEDay + party_Rep + party_Dem + 
+    numtimesvoted_beforeNov2024, family = multinomial(), data = AllClarkCountyWide)
+
+Coefficients: 
+                                Estimate Std. Error  z value Pr(>|z|)    
+(Intercept):1                 -3.6707932  0.0457615  -80.216  < 2e-16 ***
+(Intercept):2                 -0.0141054  0.0078299   -1.801  0.07163 .  
+(Intercept):3                  1.1647771  0.0077572  150.153  < 2e-16 ***
+ageEDay:1                     -0.0013885  0.0011192   -1.241  0.21472    
+ageEDay:2                      0.0256506  0.0001802  142.311  < 2e-16 ***
+ageEDay:3                      0.0216038  0.0001852  116.639  < 2e-16 ***
+party_Rep:1                   -0.1262653  0.0425617   -2.967  0.00301 ** 
+party_Rep:2                    0.0544950  0.0068680    7.935 2.11e-15 ***
+party_Rep:3                   -0.6217004  0.0072489  -85.765  < 2e-16 ***
+party_Dem:1                    0.0383983  0.0385230    0.997  0.31888    
+party_Dem:2                    0.0853126  0.0065476   13.030  < 2e-16 ***
+party_Dem:3                   -0.2250723  0.0066890  -33.648  < 2e-16 ***
+numtimesvoted_beforeNov2024:1 -0.0261303  0.0065837   -3.969 7.22e-05 ***
+numtimesvoted_beforeNov2024:2  0.0861518  0.0009907   86.963  < 2e-16 ***
+numtimesvoted_beforeNov2024:3 -0.3821074  0.0013346 -286.302  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Names of linear predictors: log(mu[,1]/mu[,4]), log(mu[,2]/mu[,4]), log(mu[,3]/mu[,4])
+
+Residual deviance: 2641009 on 4917813 degrees of freedom
+
+Log-likelihood: -1320505 on 4917813 degrees of freedom
+
+Number of Fisher scoring iterations: 9 
+
+Warning: Hauck-Donner effect detected in the following estimate(s):
+'(Intercept):1'
+
+
+Reference group is level  4  of the response
+
+
+Call:
+vglm(formula = vote_type ~ ageEDay + party_Rep + party_Dem + 
+    last_voted_EV + last_voted_MB + last_voted_PP + numtimesvoted_beforeNov2024, 
+    family = multinomial(), data = AllClarkCountyWide)
+
+Coefficients: 
+                                Estimate Std. Error  z value Pr(>|z|)    
+(Intercept):1                 -3.3569708  0.0862564  -38.919  < 2e-16 ***
+(Intercept):2                 -0.6395558  0.0166911  -38.317  < 2e-16 ***
+(Intercept):3                  0.1169718  0.0168443    6.944 3.80e-12 ***
+ageEDay:1                     -0.0076794  0.0013972   -5.496 3.87e-08 ***
+ageEDay:2                      0.0179638  0.0002195   81.856  < 2e-16 ***
+ageEDay:3                      0.0188607  0.0002419   77.970  < 2e-16 ***
+party_Rep:1                   -0.1659585  0.0518665   -3.200  0.00138 ** 
+party_Rep:2                    0.2081503  0.0082819   25.133  < 2e-16 ***
+party_Rep:3                   -0.2100721  0.0093980  -22.353  < 2e-16 ***
+party_Dem:1                    0.0547584  0.0454664    1.204  0.22845    
+party_Dem:2                   -0.0091013  0.0078400   -1.161  0.24569    
+party_Dem:3                    0.0593044  0.0085474    6.938 3.97e-12 ***
+last_voted_EV:1               -0.0395134  0.0812135   -0.487  0.62659    
+last_voted_EV:2                0.9557510  0.0158288   60.380  < 2e-16 ***
+last_voted_EV:3                0.4629861  0.0158882   29.140  < 2e-16 ***
+last_voted_MB:1                0.0021904  0.0794729    0.028  0.97801    
+last_voted_MB:2                1.6151927  0.0155613  103.796  < 2e-16 ***
+last_voted_MB:3                0.7776002  0.0155006   50.166  < 2e-16 ***
+last_voted_PP:1               -0.2219101  0.0762994   -2.908  0.00363 ** 
+last_voted_PP:2               -0.0701393  0.0152941   -4.586 4.52e-06 ***
+last_voted_PP:3               -0.2732307  0.0152134  -17.960  < 2e-16 ***
+numtimesvoted_beforeNov2024:1 -0.0084666  0.0083075   -1.019  0.30813    
+numtimesvoted_beforeNov2024:2  0.1139901  0.0012463   91.461  < 2e-16 ***
+numtimesvoted_beforeNov2024:3 -0.2258117  0.0016404 -137.658  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Names of linear predictors: log(mu[,1]/mu[,4]), log(mu[,2]/mu[,4]), log(mu[,3]/mu[,4])
+
+Residual deviance: 1595026 on 3121524 degrees of freedom
+
+Log-likelihood: -797512.8 on 3121524 degrees of freedom
+
+Number of Fisher scoring iterations: 8 
+
+
+
+
+```{r allegiant and in person binary}
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    allegiantandinperson = case_when(
+      votecode59 == "PP" & allegiant == "1" ~ 1,
+      votecode59 == "PP" & allegiant != "1" ~ 0,
+      TRUE ~ NA_real_
+    )
+  )
+
+
+
+binarycontrols <- glm(
+  allegiantandinperson ~ ageEDay + party_Rep + party_Dem + 
+    last_voted_EV + last_voted_MB + last_voted_PP + 
+    numtimesvoted_beforeNov2024,
+  data = AllClarkCountyWide,
+  family = binomial()
+)
+
+summary(binarycontrols)
+
+
+
+
+
+
+binarylesscontrols <- glm(
+  allegiantandinperson ~ ageEDay + party_Rep + 
+    numtimesvoted_beforeNov2024,
+  data = AllClarkCountyWide,
+  family = binomial()
+)
+summary(binarylesscontrols)
+
+```
+
+
+Call:
+glm(formula = allegiantandinperson ~ ageEDay + party_Rep + party_Dem + 
+    last_voted_EV + last_voted_MB + last_voted_PP + numtimesvoted_beforeNov2024, 
+    family = binomial(), data = AllClarkCountyWide)
+
+Coefficients:
+                             Estimate Std. Error z value Pr(>|z|)    
+(Intercept)                 -3.337045   0.088273 -37.803  < 2e-16 ***
+ageEDay                     -0.008243   0.001484  -5.554 2.79e-08 ***
+party_Rep                   -0.164394   0.051850  -3.171  0.00152 ** 
+party_Dem                    0.053370   0.045286   1.179  0.23859    
+last_voted_EV               -0.071051   0.080563  -0.882  0.37781    
+last_voted_MB               -0.020869   0.079034  -0.264  0.79174    
+last_voted_PP               -0.215597   0.076890  -2.804  0.00505 ** 
+numtimesvoted_beforeNov2024 -0.004104   0.008695  -0.472  0.63693    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 26380  on 130535  degrees of freedom
+Residual deviance: 26277  on 130528  degrees of freedom
+  (909980 observations deleted due to missingness)
+AIC: 26293
+
+Number of Fisher Scoring iterations: 6
+
+
+```{r geocoding attempts}
+
+colnames(AllClarkCountyWide)
+glimpse(AllClarkCountyWide$residentialaddress1)
+glimpse(AllClarkCountyWide$residentialaddress2)
+glimpse(AllClarkCountyWide$residentialcity)
+glimpse(AllClarkCountyWide$residentialstate)
+glimpse(AllClarkCountyWide$residentialzip)
+
+
+
+sample_voters <- AllClarkCountyWide %>% slice_sample(n = 100)
+sample_geo <- sample_voters %>%
+  mutate(full_address = paste(residentialaddress1, residentialcity, residentialstate, residentialzip, sep = ", ")) %>%
+  geocode(address = full_address, method = "osm", lat = latitude, long = longitude)
+
+
+glimpse(sample_geo)
+
+
+
+
+
+AllClarkCountyWide <- AllClarkCountyWide %>%
+  mutate(
+    full_address = paste(residentialaddress1, residentialcity, residentialstate, residentialzip, sep = ", ")
+  )
+
+# Geocode using OpenStreetMap (free but slower; good for testing batches first)
+AllClarkCountyWide_geo <- AllClarkCountyWide %>%
+  geocode(address = full_address, method = "osm", lat = latitude, long = longitude)
+
+
+
+
+census_input <- AllClarkCountyWide %>%
+  mutate(ID = row_number()) %>%
+  select(ID,
+         Address = residentialaddress1,
+         City = residentialcity,
+         State = residentialstate,
+         ZIP = residentialzip)
+
+# Save to CSV without column names
+write_csv(census_input, "census_input.csv", col_names = FALSE)
+
+
+split_files <- split(census_input, (seq_len(nrow(census_input)) - 1) %/% 10000)
+# Write out each
+for (i in seq_along(split_files)) {
+  write_csv(split_files[[i]], paste0("census_input_part_", i, ".csv"), col_names = FALSE)
+}
+
+
+
+
+
+
+```
