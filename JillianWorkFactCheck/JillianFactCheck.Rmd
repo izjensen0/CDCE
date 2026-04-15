@@ -1,0 +1,629 @@
+---
+title: "JillianFactCheck"
+author: "Isabelle Jensen"
+date: "2026-03-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+
+
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
+library(gt)
+library(kableExtra)
+library(ggplot2)
+library(scales)
+
+
+library(haven)
+ca <- read_sav("ca photo id variables and dpoc v2.sav")
+
+glimpse(ca)
+```
+
+
+```{r dpoc_summary}
+
+library(dplyr)
+library(janitor)
+
+ca %>%
+  tabyl(dpoc_summary, inc4cat) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+library(dplyr)
+library(janitor)
+
+ca %>%
+  tabyl(dpoc_summary) %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1)
+
+table(ca$dpoc_summary)
+#use overall weight
+
+
+
+library(survey)
+
+design <- svydesign(
+  ids = ~1,
+  weights = ~Overall_weight,
+  data = ca
+)
+
+
+svytable(~dpoc_summary, design)
+
+prop.table(svytable(~dpoc_summary, design))
+
+
+
+
+library(dplyr)
+library(forcats)
+
+ca <- ca %>%
+  mutate(
+    dpoc_summary = factor(
+      dpoc_summary,
+      levels = c(1,2,3,4,5),
+      labels = c(
+        "No DPOC",
+        "Inacc. DPOC w/ wrong name",
+        "Inacc. DPOC w/ right name",
+        "Acc. DPOC w/ wrong name",
+        "Acc. DPOC w/ right name"
+      )
+    )
+  )
+
+
+library(survey)
+
+design_ca <- svydesign(
+  ids = ~1,
+  weights = ~Overall_weight,
+  data = ca
+)
+
+
+
+tab_party <- svytable(~dpoc_summary + pid3cat, design_ca)
+
+# column percentages
+party_pct <- round(prop.table(tab_party, 2) * 100, 1)
+
+# column Ns
+party_n <- round(colSums(tab_party), 1)
+
+party_pct
+party_n
+
+
+
+tab_race <- svytable(~dpoc_summary + race_and_ethnicity, design_ca)
+
+round(prop.table(tab_race, 2) * 100, 1)
+
+
+
+tab_party <- svytable(~dpoc_summary + pid3cat, design_ca)
+
+# column percentages
+party_pct <- round(prop.table(tab_party, 2) * 100, 1)
+
+# column Ns
+party_n <- round(colSums(tab_party), 1)
+
+party_pct
+party_n
+
+
+
+
+tab_income <- svytable(~dpoc_summary + inc4cat, design_ca)
+
+income_pct <- round(prop.table(tab_income, 2) * 100, 1)
+
+income_n <- round(colSums(tab_income), 1)
+
+income_pct
+income_n
+
+
+
+tab_age <- svytable(~dpoc_summary + age18_29, design_ca)
+age_pct <- round(prop.table(tab_age, 2) * 100, 1)
+age_pct
+
+
+age_n <- round(colSums(tab_age),1)
+age_n
+
+
+
+```
+
+
+
+```{r dpoc name}
+
+
+ca <- ca %>%
+  mutate(
+    dpoc_name_num = as.numeric(dpoc_name),
+    dpoc_name = factor(
+      dpoc_name_num,
+      levels = c(1, 2, 3),
+      labels = c("No DPOC", "DPOC with wrong name", "DPOC with right name")
+    )
+  )
+
+# quick sanity check
+table(ca$dpoc_name, useNA = "ifany")
+
+
+ca <- ca %>%
+  mutate(
+    dpoc_name_num = as.numeric(dpoc_name),
+    dpoc_name = factor(
+      dpoc_name_num,
+      levels = c(1, 2, 3),
+      labels = c("No DPOC", "DPOC with wrong name", "DPOC with right name")
+    )
+  )
+
+# quick sanity check
+table(ca$dpoc_name, useNA = "ifany")
+
+
+tab_dpoc_name <- svytable(~dpoc_name, design_ca)
+
+# weighted counts
+tab_dpoc_name
+
+# total weighted N
+sum(tab_dpoc_name)
+
+# weighted percentages
+round(prop.table(tab_dpoc_name) * 100, 1)
+
+# nice combined table
+data.frame(
+  dpoc_name = names(tab_dpoc_name),
+  weighted_n = round(as.numeric(tab_dpoc_name), 1),
+  percent = round(as.numeric(prop.table(tab_dpoc_name)) * 100, 1)
+)
+
+
+
+col_pct_crosstab <- function(col_var) {
+  f <- as.formula(paste("~ dpoc_name +", col_var))
+  tab <- svytable(f, design_ca)
+
+  list(
+    weighted_counts = tab,
+    col_percent = round(prop.table(tab, 2) * 100, 1),
+    col_weighted_n = round(colSums(tab), 1)
+  )
+}
+
+
+ct_gender <- col_pct_crosstab("gender_2cat")
+ct_gender$col_percent
+ct_gender$col_weighted_n
+
+
+
+ct_race <- col_pct_crosstab("race_and_ethnicity")
+ct_race$col_percent
+ct_race$col_weighted_n
+
+
+ct_party <- col_pct_crosstab("pid3cat")
+ct_party$col_percent
+ct_party$col_weighted_n
+
+
+
+ct_income <- col_pct_crosstab("inc4cat")
+ct_income$col_percent
+ct_income$col_weighted_n
+
+
+ct_age <- col_pct_crosstab("age18_29")
+ct_age$col_percent
+ct_age$col_weighted_n
+
+ct_income <- col_pct_crosstab("inc4cat")
+ct_income$col_percent
+ct_income$col_weighted_n
+
+
+```
+
+```{r dpoc acc}
+
+
+library(dplyr)
+library(survey)
+
+# 1) Label dpoc_acc (safe numeric copy -> factor labels)
+ca <- ca %>%
+  mutate(
+    dpoc_acc_num = as.numeric(dpoc_acc),
+    dpoc_acc = factor(
+      dpoc_acc_num,
+      levels = c(1, 2, 3),
+      labels = c("No DPOC", "Inacc. DPOC", "Acc. DPOC")
+    )
+  )
+
+# sanity check (unweighted)
+table(ca$dpoc_acc, useNA = "ifany")
+
+# 2) Weighted survey design (Overall_weight)
+design_ca <- svydesign(
+  ids = ~1,
+  weights = ~Overall_weight,
+  data = ca
+)
+
+# 3) Weighted frequency + % for dpoc_acc
+tab_dpoc_acc <- svytable(~dpoc_acc, design_ca)
+
+tab_dpoc_acc            # weighted counts
+sum(tab_dpoc_acc)       # total weighted N
+round(prop.table(tab_dpoc_acc) * 100, 1)  # weighted %
+
+data.frame(
+  dpoc_acc = names(tab_dpoc_acc),
+  weighted_n = round(as.numeric(tab_dpoc_acc), 1),
+  percent = round(as.numeric(prop.table(tab_dpoc_acc)) * 100, 1)
+)
+
+# 4) Helper: column-% crosstab + column weighted N (each column sums to 100%)
+col_pct_crosstab_acc <- function(col_var) {
+  f <- as.formula(paste("~ dpoc_acc +", col_var))
+  tab <- svytable(f, design_ca)
+
+  list(
+    weighted_counts = tab,
+    col_percent = round(prop.table(tab, 2) * 100, 1),
+    col_weighted_n = round(colSums(tab), 1)
+  )
+}
+
+# 5) Column-% crosstabs you asked for (percentages + column Ns)
+ct_gender <- col_pct_crosstab_acc("gender_2cat")
+ct_gender$col_percent
+ct_gender$col_weighted_n
+
+ct_race <- col_pct_crosstab_acc("race_and_ethnicity")
+ct_race$col_percent
+ct_race$col_weighted_n
+
+ct_party <- col_pct_crosstab_acc("pid3cat")
+ct_party$col_percent
+ct_party$col_weighted_n
+
+ct_income <- col_pct_crosstab_acc("inc4cat")
+ct_income$col_percent
+ct_income$col_weighted_n
+
+ct_age <- col_pct_crosstab_acc("age18_29")
+ct_age$col_percent
+ct_age$col_weighted_n
+
+
+
+
+
+```
+
+
+```{r DPOC_problems}
+
+ca <- ca %>%
+  mutate(
+    dpoc_problems_num = as.numeric(dpoc_problems),
+    dpoc_problems = factor(
+      dpoc_problems_num,
+      levels = c(1, 2, 3),
+      labels = c("No DPOC", "Problematic DPOC", "DPOC")
+    )
+  )
+
+# sanity check
+table(ca$dpoc_problems, useNA = "ifany")
+
+
+design_ca <- svydesign(
+  ids = ~1,
+  weights = ~Overall_weight,
+  data = ca
+)
+
+tab_dpoc_prob <- svytable(~dpoc_problems, design_ca)
+tab_dpoc_prob
+
+
+sum(tab_dpoc_prob)
+
+round(prop.table(tab_dpoc_prob) * 100, 1)
+
+data.frame(
+  dpoc_problems = names(tab_dpoc_prob),
+  weighted_n = round(as.numeric(tab_dpoc_prob), 1),
+  percent = round(as.numeric(prop.table(tab_dpoc_prob)) * 100, 1)
+)
+
+col_pct_crosstab_prob <- function(col_var) {
+
+  f <- as.formula(paste("~ dpoc_problems +", col_var))
+  tab <- svytable(f, design_ca)
+
+  list(
+    weighted_counts = tab,
+    col_percent = round(prop.table(tab, 2) * 100, 1),
+    col_weighted_n = round(colSums(tab), 1)
+  )
+
+}
+
+
+col_pct_crosstab_prob <- function(col_var) {
+
+  f <- as.formula(paste("~ dpoc_problems +", col_var))
+  tab <- svytable(f, design_ca)
+
+  list(
+    weighted_counts = tab,
+    col_percent = round(prop.table(tab, 2) * 100, 1),
+    col_weighted_n = round(colSums(tab), 1)
+  )
+
+}
+
+
+
+ct_gender <- col_pct_crosstab_prob("gender_2cat")
+ct_gender$col_percent
+ct_gender$col_weighted_n
+
+
+
+ct_race <- col_pct_crosstab_prob("race_and_ethnicity")
+ct_race$col_percent
+ct_race$col_weighted_n
+
+
+ct_party <- col_pct_crosstab_prob("pid3cat")
+ct_party$col_percent
+ct_party$col_weighted_n
+
+
+ct_income <- col_pct_crosstab_prob("inc4cat")
+ct_income$col_percent
+ct_income$col_weighted_n
+
+
+ct_age <- col_pct_crosstab_prob("age18_29")
+ct_age$col_percent
+ct_age$col_weighted_n
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+```{r dpoc_overall_dummy}
+
+library(dplyr)
+library(haven)
+library(survey)
+
+# 1) Recode (flip) using the true underlying code
+ca <- ca %>%
+  mutate(
+    Overall_weight = as.numeric(Overall_weight),
+    dpoc_overall_dummy_code = suppressWarnings(as.numeric(zap_labels(dpoc_overall_dummy))),
+    dpoc_overall_dummy_flip = case_when(
+      is.na(dpoc_overall_dummy_code) ~ 1,  # NA -> DPOC
+      dpoc_overall_dummy_code == 2   ~ 0,  # 2  -> No DPOC
+      TRUE ~ NA_real_
+    ),
+    dpoc_overall_dummy_flip = factor(
+      dpoc_overall_dummy_flip,
+      levels = c(0, 1),
+      labels = c("No DPOC", "DPOC")
+    )
+  )
+
+# sanity checks (UNweighted)
+table(ca$dpoc_overall_dummy_flip, useNA = "ifany")
+summary(ca$Overall_weight)
+sum(is.na(ca$Overall_weight))
+
+
+# 2) IMPORTANT: rebuild the survey design AFTER the mutate
+design_ca <- svydesign(ids = ~1, weights = ~Overall_weight, data = ca)
+
+# extra sanity check: total weight
+sum(weights(design_ca))
+
+
+
+# 3) Weighted frequency + %
+tab_dpoc_flip <- svytable(~dpoc_overall_dummy_flip, design_ca)
+tab_dpoc_flip
+sum(tab_dpoc_flip)
+round(prop.table(tab_dpoc_flip) * 100, 1)
+
+
+col_pct_crosstab_flip <- function(col_var) {
+  f <- as.formula(paste("~ dpoc_overall_dummy_flip +", col_var))
+  tab <- svytable(f, design_ca)
+
+  list(
+    weighted_counts = tab,
+    col_percent = round(prop.table(tab, 2) * 100, 1),
+    col_weighted_n = round(colSums(tab), 1)
+  )
+}
+
+ct_gender <- col_pct_crosstab_flip("gender_2cat")
+ct_gender$col_percent
+ct_gender$col_weighted_n
+
+ct_race <- col_pct_crosstab_flip("race_and_ethnicity")
+ct_race$col_percent
+ct_race$col_weighted_n
+
+ct_party <- col_pct_crosstab_flip("pid3cat")
+ct_party$col_percent
+ct_party$col_weighted_n
+
+ct_income <- col_pct_crosstab_flip("inc4cat")
+ct_income$col_percent
+ct_income$col_weighted_n
+
+ct_age <- col_pct_crosstab_flip("age18_29")
+ct_age$col_percent
+ct_age$col_weighted_n
+
+
+
+```
+
+
+
+```{r passport freq}
+
+weighted_freq <- function(var){
+  
+  f <- as.formula(paste("~", var))
+  tab <- svytable(f, design_ca)
+  
+  data.frame(
+    category = names(tab),
+    weighted_n = round(as.numeric(tab),1),
+    percent = round(as.numeric(prop.table(tab))*100,1)
+  )
+  
+}
+
+
+weighted_freq("passport_3cat_unexpired")
+weighted_freq("pp_name_recode")
+
+glimpse(ca$pp_name_recode)
+table(ca$pp_name_recode)
+table(ca$pp_name)
+weighted_freq("pp_name")
+weighted_freq("passport_name_dummy")
+weighted_freq("pp_name_recode")
+
+
+
+weighted_freq("passport_3cat_with_expired")
+weighted_freq("pp_name_with_expired")
+weighted_freq("passport_name_dummy_with_expired")
+weighted_freq("id_passport")
+
+table(ca$birth_cert)
+
+weighted_freq("birth_cert_name")
+weighted_freq("birth_cert")
+weighted_freq("birth_cert_name_dummy")
+weighted_freq("bc_name_recode")
+
+
+
+weighted_freq("nat_cert")
+weighted_freq("nat_cert_name")
+weighted_freq("nat_cert_name_dummy")
+weighted_freq("NATURALIZATION_CERTIFICATE_NAME_REASON")
+table(ca$Citizen_weight)
+
+
+
+
+
+
+library(survey)
+
+# build a design that uses Citizen_weight
+design_citizen <- svydesign(
+  ids = ~1,
+  weights = ~Citizen_weight,
+  data = ca
+)
+
+# weighted frequency function (Citizen_weight)
+weighted_freq_citizen <- function(var, design = design_citizen) {
+
+  f <- as.formula(paste("~", var))
+  tab <- svytable(f, design)
+
+  data.frame(
+    category   = names(tab),
+    weighted_n = round(as.numeric(tab), 1),
+    percent    = round(as.numeric(prop.table(tab)) * 100, 1)
+  )
+}
+
+# optional sanity checks
+summary(weights(design_citizen))
+sum(weights(design_citizen))
+
+# example usage:
+# weighted_freq_citizen("passport_3cat_unexpired")
+# weighted_freq_citizen("pp_name_recode")
+
+weighted_freq_citizen("nat_cert")
+weighted_freq_citizen("nat_cert_name")
+weighted_freq_citizen("nat_cert_name_dummy")
+weighted_freq_citizen("NATURALIZATION_CERTIFICATE_NAME_REASON")
+
+
+
+weighted_freq("citi_cert")
+weighted_freq("citi_cert_name")
+weighted_freq("citi_cert_name_dummy")
+weighted_freq("CERTIFICATE_OF_CITIZENSHIP_NAME_REASON")
+
+
+
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

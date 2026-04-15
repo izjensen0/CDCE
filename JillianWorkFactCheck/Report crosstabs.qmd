@@ -1,0 +1,167 @@
+---
+title: "pop estimates"
+format: pdf
+editor: visual
+---
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(tidyr)
+library(haven)
+library(readr)
+library(stargazer)
+library(ggplot2)
+library(xtable)
+library(pollster)
+library(knitr)
+library(naniar)
+library(scales)
+library(gmodels)
+library(questionr)
+
+data <- read_sav("ca photo id variables and dpoc v2.sav")
+```
+
+```{r, echo=FALSE}
+
+# Driver's License
+
+crosstab(data, pid3cat, DRIVERS_LICENSE, pct_type = "row", Overall_weight)
+
+crosstab(data, race_and_ethnicity, DRIVERS_LICENSE, pct_type = "row", Overall_weight)
+
+crosstab(data, inc4cat, DRIVERS_LICENSE, pct_type = "row", Overall_weight)
+
+crosstab(data, age18_29, DRIVERS_LICENSE, pct_type = "row", Overall_weight)
+
+# State ID
+
+topline(data, ca_stateID_dummy, Overall_weight)
+
+crosstab(data, pid3cat, ca_stateID_dummy, pct_type = "row", Overall_weight)
+
+crosstab(data, race_and_ethnicity, ca_stateID_dummy, pct_type = "row", Overall_weight)
+
+crosstab(data, inc4cat, ca_stateID_dummy, pct_type = "row", Overall_weight)
+
+crosstab(data, age18_29, ca_stateID_dummy, pct_type = "row", Overall_weight)
+
+# Passport
+
+crosstab(data, id_passport, pid3cat, pct_type = "column", Overall_weight)
+
+crosstab(data, id_passport, race_and_ethnicity, pct_type = "column", Overall_weight)
+
+crosstab(data, id_passport, inc4cat, pct_type = "column", Overall_weight)
+
+crosstab(data, id_passport, age18_29, pct_type = "column", Overall_weight)
+
+
+```
+
+```{r, echo=FALSE}
+
+crosstab(data, dpoc_summary, pid3cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_summary, inc4cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_summary, age18_29, pct_type = "column", Overall_weight)
+```
+
+```{r, echo=FALSE}
+
+crosstab(data, dpoc_name, pid3cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_name, inc4cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_name, age18_29, pct_type = "column", Overall_weight)
+
+
+crosstab(data, dpoc_acc, pid3cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_acc, inc4cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_acc, age18_29, pct_type = "column", Overall_weight)
+```
+
+```{r, echo=FALSE}
+
+crosstab(data, dpoc_problems, pid3cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_problems, inc4cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_problems, age18_29, pct_type = "column", Overall_weight)
+
+
+crosstab(data, dpoc_overall_dummy, pid3cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_overall_dummy, inc4cat, pct_type = "column", Overall_weight)
+
+crosstab(data, dpoc_overall_dummy, age18_29, pct_type = "column", Overall_weight)
+```
+
+```{r, echo=FALSE}
+
+# some net variables
+
+dl_cost <- NA
+dl_cost[data$DRIVER_LICENSE_COST == 4] <- 0
+dl_cost[data$DRIVER_LICENSE_COST == 3] <- 0
+dl_cost[data$DRIVER_LICENSE_COST == 2] <- 1
+dl_cost[data$DRIVER_LICENSE_COST == 1] <- 1
+
+data$dl_cost <- factor(dl_cost,
+                       levels = c(0,1),
+                       labels = c("Not difficult", "Difficult"))
+
+bc_cost <- NA
+bc_cost[data$BIRTH_CERTIFICATE_COST == 4] <- 0
+bc_cost[data$BIRTH_CERTIFICATE_COST == 3] <- 0
+bc_cost[data$BIRTH_CERTIFICATE_COST == 2] <- 1
+bc_cost[data$BIRTH_CERTIFICATE_COST == 1] <- 1
+
+
+data$bc_cost <- factor(bc_cost,
+                       levels = c(0,1),
+                       labels = c("Not difficult", "Difficult"))
+lic_time <- NA
+lic_time[data$LICENSE_WAIT_TIME == 4] <- 0
+lic_time[data$LICENSE_WAIT_TIME == 3] <- 0
+lic_time[data$LICENSE_WAIT_TIME == 2] <- 1
+lic_time[data$LICENSE_WAIT_TIME == 1] <- 1
+
+data$lic_time <- factor(lic_time, 
+                        levels = c(0,1),
+                        labels = c("Unacceptable", "Acceptable"))
+
+stateid_time <- NA
+stateid_time[data$STATE_ID_WAIT_TIME == 4] <- 0
+stateid_time[data$STATE_ID_WAIT_TIME == 3] <- 0
+stateid_time[data$STATE_ID_WAIT_TIME == 2] <- 1
+stateid_time[data$STATE_ID_WAIT_TIME == 1] <- 1
+
+data$stateid_time <- factor(stateid_time, 
+                        levels = c(0,1),
+                        labels = c("Unacceptable", "Acceptable"))
+
+bc_time <- NA
+bc_time[data$BIRTH_CERTIFICATE_WAIT_TIME == 4] <- 0
+bc_time[data$BIRTH_CERTIFICATE_WAIT_TIME == 3] <- 0
+bc_time[data$BIRTH_CERTIFICATE_WAIT_TIME == 2] <- 1
+bc_time[data$BIRTH_CERTIFICATE_WAIT_TIME == 1] <- 1
+
+data$bc_time <- factor(bc_time, 
+                        levels = c(0,1),
+                        labels = c("Unacceptable", "Acceptable"))
+
+pp_time <- NA
+pp_time[data$PASSPORT_WAIT_TIME == 4] <- 0
+pp_time[data$PASSPORT_WAIT_TIME == 3] <- 0
+pp_time[data$PASSPORT_WAIT_TIME == 2] <- 1
+pp_time[data$PASSPORT_WAIT_TIME == 1] <- 1
+
+data$pp_time <- factor(pp_time, 
+                        levels = c(0,1),
+                        labels = c("Unacceptable", "Acceptable"))
+
+```

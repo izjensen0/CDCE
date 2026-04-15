@@ -1,0 +1,1222 @@
+---
+title: "NJVotersonVote16"
+author: "Isabelle Jensen"
+date: "2025-06-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
+library(gt)
+library(kableExtra)
+library(ggplot2)
+library(haven)
+
+library(survey)
+library(dplyr)
+library(tidyr)
+library(openxlsx) 
+
+# Read the .sav file
+NJV <- read_sav("12152NJ16.sav")
+#"C:\Users\izzoe\Documents\GitHub\CDCE\NJVoterswork\12152NJ16.sav"
+
+
+
+```
+Can you do the following (all using the weight)?
+
+-run the frequencies for all of the main variables and create a toplines document that lists the questions and the responses in terms of count and percent (formatted in professional tables)
+--Note that the characteristics of 16- & 17-year-olds variables are set up in a weird way and will require some recoding
+
+-run crosstabs of the main variables about the voting age (school board, local, state, national) and key demographics, putting the demogs in the rows and voting age questions in the columns and get the row percentages (formatted in professional tables)
+
+-summarize the key results from the toplines and crabs using a few bullet points
+
+
+```{r}
+
+View(NJV)
+
+summary(NJV$qd3)
+
+design <- svydesign(ids = ~1, data = NJV, weights = ~weight)
+
+
+main_vars <- c("q1", "q2", "q3","q4", "q5","q6","q7","q8","q9","q10")  # replace with your actual variable names
+
+# Function to compute weighted freq for one variable
+get_weighted_freq <- function(var) {
+  formula <- as.formula(paste0("~", var))
+  tab <- svytable(formula, design)
+  df <- as.data.frame(tab)
+  colnames(df) <- c("Response", "Weighted_Count")
+  df$Percent <- prop.table(df$Weighted_Count) * 100
+  df$Question <- var
+  df <- df[, c("Question", "Response", "Weighted_Count", "Percent")]
+  return(df)
+}
+
+# Apply to all variables
+toplines_list <- lapply(main_vars, get_weighted_freq)
+
+# Combine into one data frame
+toplines_df <- bind_rows(toplines_list)
+
+toplines_df
+
+
+
+
+
+
+# Make sure Percent is rounded and formatted
+toplines_df <- toplines_df %>%
+  mutate(
+    Weighted_Count = round(Weighted_Count, 1),
+    Percent = paste0(round(Percent, 1), "\\%")
+  )
+
+# Build LaTeX rows
+latex_rows <- toplines_df %>%
+  mutate(
+    QuestionLabel = ifelse(duplicated(Question), " ", Question),
+    LaTeX = paste0(
+      QuestionLabel, " & ",
+      Response, " & ",
+      Weighted_Count, " & ",
+      Percent, " \\\\"
+    )
+  ) %>%
+  pull(LaTeX)
+
+header <- "\\begin{tabular}{p{6cm}lrr}
+\\hline
+\\textbf{Question} & \\textbf{Response} & \\textbf{Count} & \\textbf{Percent} \\\\
+\\hline"
+
+footer <- "\\hline
+\\end{tabular}"
+
+latex_table <- c(header, latex_rows, footer)
+latex_table
+# Save to .tex file
+writeLines(latex_table, "toplines_table.tex")
+
+cat(paste(latex_table, collapse = "\n"))
+
+
+
+
+colnames(NJV)
+nrow(NJV)
+
+
+# Assume your weight variable is called "weight"
+library(survey)
+
+# Define a survey design object
+njv_design <- svydesign(ids = ~1, weights = ~weight, data = NJV)
+
+# Calculate effective sample size
+eff_n <- 1 / mean(weights(njv_design)^2) * sum(weights(njv_design))^2
+
+z <- 1.96
+p <- 0.5  # Conservative estimate
+moe <- z * sqrt(p * (1 - p) / eff_n)
+moe_percent <- round(moe * 100, 1)
+
+moe_percent
+
+
+
+
+summary(NJV$weight)
+hist(NJV$weight, main = "Distribution of Weights", xlab = "Weight")
+
+
+# Raw sample size (unweighted)
+n_raw <- nrow(NJV)
+
+# Weighted sample size
+n_weighted <- sum(weights(njv_design))
+
+# Effective sample size
+eff_n <- 1 / mean(weights(njv_design)^2) * sum(weights(njv_design))^2
+
+# Print all
+cat("Raw sample size:", n_raw, "\n")
+cat("Weighted sample size:", round(n_weighted), "\n")
+cat("Effective sample size:", round(eff_n), "\n")
+
+
+moe_simple <- 1.96 * sqrt(0.5 * (1 - 0.5) / n_raw)
+round(moe_simple * 100, 1)  # Should be ~3.5% for n = 800
+
+
+
+library(survey)
+
+# Define the design
+
+NJV$ones <- 1
+
+
+
+# Estimate design effect using a dummy proportion variable
+njv_design <- svydesign(ids = ~1, weights = ~weight, data = NJV)
+
+deff_obj <- svymean(~ones, njv_design, deff = TRUE)
+deff_val <- attr(deff_obj, "deff")[[1]]
+
+
+n_raw <- nrow(NJV)
+eff_n <- n_raw / deff_val
+
+z <- 1.96
+p <- 0.5
+moe <- z * sqrt(p * (1 - p) / eff_n)
+moe_percent <- round(moe * 100, 1)
+
+cat("Design effect:", round(deff_val, 2), "\n")
+cat("Effective sample size:", round(eff_n), "\n")
+cat("Margin of error: ±", moe_percent, "%\n")
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r, q11}
+library(dplyr)
+library(tidyr)
+library(survey)
+
+# Step 1: Stack q11_01 to q11_09 into long format
+q11_long <- NJV %>%
+  select(weight, starts_with("q11_")) %>%
+  pivot_longer(cols = starts_with("q11_"), names_to = "slot", values_to = "selected_value") %>%
+  filter(!is.na(selected_value))  # keep only valid selections
+
+design_q11 <- svydesign(ids = ~1, data = q11_long, weights = ~weight)
+
+q11_freq <- svytable(~selected_value, design_q11)
+
+# Convert to data frame
+q11_df <- as.data.frame(q11_freq)
+colnames(q11_df) <- c("Value", "Weighted_Count")
+
+# Calculate percent
+q11_df <- q11_df %>%
+  mutate(
+    Percent = round(100 * Weighted_Count / sum(Weighted_Count), 1)
+  )
+
+q11_df
+
+q11_labels <- c(
+  "1" = "Mature",
+  "2" = "Immature",
+  "3" = "Knowledgeable",
+  "4" = "Uninformed",
+  "5" = "Engaged in the community",
+  "6" = "Apathetic",
+  "7" = "Easily influenced",
+  "8" = "Angry",
+  "9" = "Bored"
+)
+
+q11_df <- q11_df %>%
+  mutate(Label = q11_labels[as.character(Value)]) %>%
+  select(Label, Weighted_Count, Percent)
+
+q11_df
+```
+
+
+-run crosstabs of the main variables about the voting age (school board, local, state, national) and key demographics, putting the demogs in the rows and voting age questions in the columns and get the row percentages (formatted in professional tables)
+q1 school board
+q4 local
+q6 state
+q8 national
+
+qd2 party rep 1 dem 2 ind 3
+qd4 age
+qd6 latino 1
+qd7 white black asian
+qd10 income
+qdll man 1 woman 2 else 3
+
+```{r, party crosstab}
+#school board party
+
+library(srvyr)
+library(dplyr)
+library(tidyr)
+
+# 1. Filter qd2 to just 1 and 2
+NJV_filtered <- NJV %>%
+  filter(qd2 %in% c(1, 2))
+
+# 2. Create survey design with weights
+survey_data <- NJV_filtered %>%
+  as_survey_design(weights = weight)
+
+# 3. Weighted counts
+counts <- survey_data %>%
+  group_by(qd2, q1) %>%
+  summarize(n = survey_total(na.rm = TRUE), .groups = "drop")
+
+# 4. Weighted row-wise percentages (within qd2)
+percents <- survey_data %>%
+  group_by(qd2, q1) %>%
+  summarize(pct = survey_mean(proportion = TRUE, na.rm = TRUE), .groups = "drop") %>%
+  mutate(pct = round(100 * pct, 1))
+
+# 5. Merge counts and percents
+combined <- left_join(counts, percents, by = c("qd2", "q1")) %>%
+  mutate(cell = paste0(round(n, 1), " (", pct, "%)")) %>%
+  select(qd2, q1, cell)
+
+# 6. Pivot to wide format: qd2 as rows, q1 as columns
+crosstab_final <- combined %>%
+  pivot_wider(names_from = q1, values_from = cell, names_prefix = "q1_")
+crosstab_final
+
+library(xtable)
+print(xtable(crosstab_final), include.rownames = FALSE, type = "latex")
+
+
+##all school board
+
+generate_crosstab <- function(df, weight_var, row_var, col_var) {
+  df_filtered <- df %>%
+    filter(!!rlang::sym(row_var) %in% c(1, 2))  # filter qd2 == 1 or 2
+
+  survey_data <- df_filtered %>%
+    as_survey_design(weights = !!rlang::sym(weight_var))
+
+  counts <- survey_data %>%
+    group_by(!!rlang::sym(row_var), !!rlang::sym(col_var)) %>%
+    summarize(n = survey_total(na.rm = TRUE), .groups = "drop")
+
+  percents <- survey_data %>%
+    group_by(!!rlang::sym(row_var), !!rlang::sym(col_var)) %>%
+    summarize(pct = survey_mean(proportion = TRUE, na.rm = TRUE), .groups = "drop") %>%
+    mutate(pct = round(100 * pct, 1))
+
+  combined <- left_join(counts, percents, by = c(row_var, col_var)) %>%
+    mutate(cell = paste0(round(n, 1), " (", pct, "%)")) %>%
+    select(!!rlang::sym(row_var), !!rlang::sym(col_var), cell)
+
+  # Pivot to wide
+  wide <- combined %>%
+    pivot_wider(names_from = !!rlang::sym(col_var), values_from = cell, names_prefix = paste0(col_var, "_"))
+
+  return(wide)
+}
+
+
+
+ct_q1 <- generate_crosstab(NJV, weight_var = "weight", row_var = "qd2", col_var = "q1")
+ct_q4 <- generate_crosstab(NJV, weight_var = "weight", row_var = "qd2", col_var = "q4")
+ct_q6 <- generate_crosstab(NJV, weight_var = "weight", row_var = "qd2", col_var = "q6")
+ct_q8 <- generate_crosstab(NJV, weight_var = "weight", row_var = "qd2", col_var = "q8")
+
+
+library(xtable)
+
+print(
+  xtable(ct_q1, caption = "Support for School Board Elections by Party"),
+  type = "latex",
+  include.rownames = FALSE
+)
+
+print(
+  xtable(ct_q4, caption = "Support for Local Elections by Party"),
+  type = "latex",
+  include.rownames = FALSE
+)
+
+print(
+  xtable(ct_q6, caption = "Support for State Elections by Party"),
+  type = "latex",
+  include.rownames = FALSE
+)
+
+print(
+  xtable(ct_q8, caption = "Support for National Elections by Party"),
+  type = "latex",
+  include.rownames = FALSE
+)
+
+
+
+
+```
+```{r race crosstab}
+
+
+library(srvyr)
+library(dplyr)
+library(tidyr)
+
+generate_crosstab <- function(NJV, weight_var, row_var, col_var) {
+  
+  # Step 1: Filter rows to relevant row variable values (you can customize this before calling)
+  NJV_filtered <- NJV
+  
+  # Step 2: Create survey design
+  survey_data <- NJV_filtered %>%
+    as_survey_design(weights = !!rlang::sym(weight_var))
+  
+  # Step 3: Get weighted counts
+  counts <- survey_data %>%
+    group_by(!!rlang::sym(row_var), !!rlang::sym(col_var)) %>%
+    summarize(n = survey_total(na.rm = TRUE), .groups = "drop")
+  
+  # Step 4: Get weighted percentages (row-wise)
+  percents <- survey_data %>%
+    group_by(!!rlang::sym(row_var), !!rlang::sym(col_var)) %>%
+    summarize(pct = survey_mean(proportion = TRUE, na.rm = TRUE), .groups = "drop") %>%
+    mutate(pct = round(100 * pct, 1))
+  
+  # Step 5: Combine count and percent into one string
+  combined <- left_join(counts, percents, by = c(row_var, col_var)) %>%
+    mutate(cell = paste0(round(n, 1), " (", pct, "%)")) %>%
+    select(!!sym(row_var), !!sym(col_var), cell)
+  
+  # ✅ Step 6: Ensure all combinations of row/column are included (this is the fix!)
+  combined <- combined %>%
+    complete(!!sym(row_var), !!sym(col_var), fill = list(cell = "0 (0%)"))
+  
+  # Step 7: Pivot to wide format for LaTeX table
+  wide <- combined %>%
+    pivot_wider(names_from = !!sym(col_var), values_from = cell,
+                names_prefix = paste0(col_var, "_"))
+  
+  return(wide)
+}
+
+ct_q1_qd7 <- generate_crosstab(
+  NJV %>%
+    mutate(qd7 = as.numeric(qd7)) %>%      # make sure qd7 is numeric
+    filter(qd7 %in% c(1, 2, 3)),           # filter to the 3 values you want
+  weight_var = "weight",
+  row_var = "qd7",
+  col_var = "q1"
+)
+
+ct_q1_qd7 <- ct_q1_qd7 %>%
+  mutate(qd7 = recode(qd7,
+                      `1` = "White",
+                      `2` = "Black",
+                      `3` = "Asian"))
+
+
+library(xtable)
+
+print(
+  xtable(ct_q1_qd7, caption = "Support for School Board Elections by Race"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+ct_q4_qd7 <- generate_crosstab(
+  NJV %>%
+    mutate(qd7 = as.numeric(qd7)) %>%      # make sure qd7 is numeric
+    filter(qd7 %in% c(1, 2, 3)),           # filter to the 3 values you want
+  weight_var = "weight",
+  row_var = "qd7",
+  col_var = "q4"
+)
+
+ct_q4_qd7 <- ct_q4_qd7 %>%
+  mutate(qd7 = recode(qd7,
+                      `1` = "White",
+                      `2` = "Black",
+                      `3` = "Asian"))
+
+print(
+  xtable(ct_q4_qd7, caption = "Support for Local Elections by Race"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+ct_q6_qd7 <- generate_crosstab(
+  NJV %>%
+    mutate(qd7 = as.numeric(qd7)) %>%      # make sure qd7 is numeric
+    filter(qd7 %in% c(1, 2, 3)),           # filter to the 3 values you want
+  weight_var = "weight",
+  row_var = "qd7",
+  col_var = "q6"
+)
+
+ct_q6_qd7 <- ct_q6_qd7 %>%
+  mutate(qd7 = recode(qd7,
+                      `1` = "White",
+                      `2` = "Black",
+                      `3` = "Asian"))
+
+print(
+  xtable(ct_q6_qd7, caption = "Support for State Elections by Race"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+ct_q8_qd7 <- generate_crosstab(
+  NJV %>%
+    mutate(qd7 = as.numeric(qd7)) %>%      # make sure qd7 is numeric
+    filter(qd7 %in% c(1, 2, 3)),           # filter to the 3 values you want
+  weight_var = "weight",
+  row_var = "qd7",
+  col_var = "q8"
+)
+
+ct_q8_qd7 <- ct_q8_qd7 %>%
+  mutate(qd7 = recode(qd7,
+                      `1` = "White",
+                      `2` = "Black",
+                      `3` = "Asian"))
+
+print(
+  xtable(ct_q8_qd7, caption = "Support for National Elections by Race"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+```
+```{r Latino}
+table(NJV$qd6)
+
+ct_q1_qd6 <- generate_crosstab(
+  NJV %>%
+    mutate(qd6 = as.numeric(qd6)) %>%     # or as_factor if using labels
+    filter(qd6 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd6",
+  col_var = "q1"
+)
+
+ct_q1_qd6 <- ct_q1_qd6 %>%
+  mutate(qd6 = recode(qd6,
+                      `1` = "Latino",
+                      `2` = "Non-Latino"))
+
+
+print(
+  xtable(ct_q1_qd6, caption = "Support for School Board Elections by Ethnicity"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+
+ct_q4_qd6 <- generate_crosstab(
+  NJV %>%
+    mutate(qd6 = as.numeric(qd6)) %>%     # or as_factor if using labels
+    filter(qd6 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd6",
+  col_var = "q4"
+)
+
+ct_q4_qd6 <- ct_q4_qd6 %>%
+  mutate(qd6 = recode(qd6,
+                      `1` = "Latino",
+                      `2` = "Non-Latino"))
+
+
+print(
+  xtable(ct_q4_qd6, caption = "Support for Local Elections by Ethnicity"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+ct_q6_qd6 <- generate_crosstab(
+  NJV %>%
+    mutate(qd6 = as.numeric(qd6)) %>%     # or as_factor if using labels
+    filter(qd6 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd6",
+  col_var = "q6"
+)
+
+ct_q6_qd6 <- ct_q6_qd6 %>%
+  mutate(qd6 = recode(qd6,
+                      `1` = "Latino",
+                      `2` = "Non-Latino"))
+
+
+print(
+  xtable(ct_q6_qd6, caption = "Support for State Elections by Ethnicity"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+ct_q8_qd6 <- generate_crosstab(
+  NJV %>%
+    mutate(qd6 = as.numeric(qd6)) %>%     # or as_factor if using labels
+    filter(qd6 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd6",
+  col_var = "q8"
+)
+
+ct_q8_qd6 <- ct_q8_qd6 %>%
+  mutate(qd6 = recode(qd6,
+                      `1` = "Latino",
+                      `2` = "Non-Latino"))
+
+
+print(
+  xtable(ct_q8_qd6, caption = "Support for National Elections by Ethnicity"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+
+ct_q1_qd11 <- generate_crosstab(
+  NJV %>%
+    mutate(qd11 = as.numeric(qd11)) %>%     # or as_factor if using labels
+    filter(qd11 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd11",
+  col_var = "q1"
+)
+
+ct_q1_qd11 <- ct_q1_qd11 %>%
+  mutate(qd11 = recode(qd11,
+                      `1` = "Men",
+                      `2` = "Women"))
+
+
+print(
+  xtable(ct_q1_qd11, caption = "Support for School Board Elections by Gender"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+
+ct_q4_qd11 <- generate_crosstab(
+  NJV %>%
+    mutate(qd11 = as.numeric(qd11)) %>%     # or as_factor if using labels
+    filter(qd11 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd11",
+  col_var = "q4"
+)
+
+ct_q4_qd11 <- ct_q4_qd11 %>%
+  mutate(qd11 = recode(qd11,
+                      `1` = "Men",
+                      `2` = "Women"))
+
+
+print(
+  xtable(ct_q4_qd11, caption = "Support for Local Elections by Gender"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+
+
+ct_q6_qd11 <- generate_crosstab(
+  NJV %>%
+    mutate(qd11 = as.numeric(qd11)) %>%     # or as_factor if using labels
+    filter(qd11 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd11",
+  col_var = "q6"
+)
+
+ct_q6_qd11 <- ct_q6_qd11 %>%
+  mutate(qd11 = recode(qd11,
+                      `1` = "Men",
+                      `2` = "Women"))
+
+
+print(
+  xtable(ct_q6_qd11, caption = "Support for State by Gender"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+ct_q8_qd11 <- generate_crosstab(
+  NJV %>%
+    mutate(qd11 = as.numeric(qd11)) %>%     # or as_factor if using labels
+    filter(qd11 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd11",
+  col_var = "q8"
+)
+
+ct_q8_qd11 <- ct_q8_qd11 %>%
+  mutate(qd11 = recode(qd11,
+                      `1` = "Men",
+                      `2` = "Women"))
+
+
+print(
+  xtable(ct_q8_qd11, caption = "Support for National Election by Gender"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+```
+
+
+```{r, income and child}
+table(NJV$qd10)#income
+table(NJV$qd5)#child or not
+summary(NJV$qd4)#age
+
+229/(229+575)
+
+
+
+ct_q1_qd10 <- generate_crosstab(
+  NJV %>%
+    mutate(qd10 = as.numeric(qd10)) %>%     # or as_factor if using labels
+    filter(qd10 %in% c(1, 2, 3, 4)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd10",
+  col_var = "q1"
+)
+
+
+print(
+  xtable(ct_q1_qd10, caption = "Support for School Board Elections by Income"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+ct_q4_qd10 <- generate_crosstab(
+  NJV %>%
+    mutate(qd10 = as.numeric(qd10)) %>%     # or as_factor if using labels
+    filter(qd10 %in% c(1, 2, 3, 4)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd10",
+  col_var = "q4"
+)
+
+
+print(
+  xtable(ct_q4_qd10, caption = "Support for Local Elections by Income"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+ct_q6_qd10 <- generate_crosstab(
+  NJV %>%
+    mutate(qd10 = as.numeric(qd10)) %>%     # or as_factor if using labels
+    filter(qd10 %in% c(1, 2, 3, 4)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd10",
+  col_var = "q6"
+)
+
+
+print(
+  xtable(ct_q6_qd10, caption = "Support for State Elections by Income"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+ct_q8_qd10 <- generate_crosstab(
+  NJV %>%
+    mutate(qd10 = as.numeric(qd10)) %>%     # or as_factor if using labels
+    filter(qd10 %in% c(1, 2, 3, 4)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd10",
+  col_var = "q8"
+)
+
+
+print(
+  xtable(ct_q8_qd10, caption = "Support for National Elections by Income"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+ct_q1_qd5 <- generate_crosstab(
+  NJV %>%
+    mutate(qd5 = as.numeric(qd5)) %>%     # or as_factor if using labels
+    filter(qd5 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd5",
+  col_var = "q1"
+)
+
+ct_q1_qd5 <- ct_q1_qd5 %>%
+  mutate(qd5 = recode(qd5,
+                      `1` = "Has Child",
+                      `2` = "Doesn't Have Child"))
+
+
+print(
+  xtable(ct_q1_qd5, caption = "Support for School Board Elections by Parent Status"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+ct_q4_qd5 <- generate_crosstab(
+  NJV %>%
+    mutate(qd5 = as.numeric(qd5)) %>%     # or as_factor if using labels
+    filter(qd5 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd5",
+  col_var = "q4"
+)
+
+ct_q4_qd5 <- ct_q4_qd5 %>%
+  mutate(qd5 = recode(qd5,
+                      `1` = "Has Child",
+                      `2` = "Doesn't Have Child"))
+
+
+print(
+  xtable(ct_q4_qd5, caption = "Support for Local Elections by Parent Status"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+ct_q6_qd5 <- generate_crosstab(
+  NJV %>%
+    mutate(qd5 = as.numeric(qd5)) %>%     # or as_factor if using labels
+    filter(qd5 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd5",
+  col_var = "q6"
+)
+
+ct_q6_qd5 <- ct_q6_qd5 %>%
+  mutate(qd5 = recode(qd5,
+                      `1` = "Has Child",
+                      `2` = "Doesn't Have Child"))
+
+
+print(
+  xtable(ct_q6_qd5, caption = "Support for State Elections by Parental Status"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+ct_q8_qd5 <- generate_crosstab(
+  NJV %>%
+    mutate(qd5 = as.numeric(qd5)) %>%     # or as_factor if using labels
+    filter(qd5 %in% c(1, 2)),          # restrict to valid values
+  weight_var = "weight",
+  row_var = "qd5",
+  col_var = "q8"
+)
+
+ct_q8_qd5 <- ct_q8_qd5 %>%
+  mutate(qd5 = recode(qd5,
+                      `1` = "Has Child",
+                      `2` = "Doesn't Have Child"))
+
+
+print(
+  xtable(ct_q8_qd5, caption = "Support for National Elections by Parental Status"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+```
+```{r, age}
+
+summary(NJV$qd4)
+
+NJV <- NJV %>%
+  mutate(age_group = case_when(
+    qd4 >= 18 & qd4 <= 24 ~ "18–24",
+    qd4 >= 25 & qd4 <= 34 ~ "25–34",
+    qd4 >= 35 & qd4 <= 44 ~ "35–44",
+    qd4 >= 45 & qd4 <= 54 ~ "45–54",
+    qd4 >= 55 & qd4 <= 64 ~ "55–64",
+    qd4 >= 65 ~ "65+",
+    TRUE ~ NA_character_  # for missing or out-of-range values
+  ))
+table(NJV$age_group)
+
+
+ct_q1_age <- generate_crosstab(
+  NJV %>%
+    filter(!is.na(age_group)),  # optional: keep only valid groups
+  weight_var = "weight",
+  row_var = "age_group",
+  col_var = "q1"
+)
+
+
+library(xtable)
+
+print(
+  xtable(ct_q1_age, caption = "Support for School Board Elections by Age Group"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+ct_q4_age <- generate_crosstab(
+  NJV %>%
+    filter(!is.na(age_group)),  # optional: keep only valid groups
+  weight_var = "weight",
+  row_var = "age_group",
+  col_var = "q4"
+)
+
+
+
+print(
+  xtable(ct_q4_age, caption = "Support for Local Elections by Age Group"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+ct_q6_age <- generate_crosstab(
+  NJV %>%
+    filter(!is.na(age_group)),  # optional: keep only valid groups
+  weight_var = "weight",
+  row_var = "age_group",
+  col_var = "q6"
+)
+
+
+
+print(
+  xtable(ct_q6_age, caption = "Support for State Elections by Age Group"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+
+
+ct_q8_age <- generate_crosstab(
+  NJV %>%
+    filter(!is.na(age_group)),  # optional: keep only valid groups
+  weight_var = "weight",
+  row_var = "age_group",
+  col_var = "q8"
+)
+
+
+
+print(
+  xtable(ct_q8_age, caption = "Support for National Elections by Age Group"),
+  include.rownames = FALSE,
+  type = "latex",
+  caption.placement = "top",
+  sanitize.text.function = identity
+)
+
+```
+
+
+
+```{r education}
+colnames(NJV)
+#qd3
+summary(NJV$qd3)
+table(NJV$educ_recode)
+
+# Recode qd3 into new education categories
+NJV$educ_recode <- factor(
+  case_when(
+    NJV$qd3 %in% c(1, 2) ~ "Less than high school",
+    NJV$qd3 == 3 ~ "High school graduate",
+    NJV$qd3 %in% c(4, 5, 6) ~ "Some college or 2-year degree",
+    NJV$qd3 == 7 ~ "4-year college graduate",
+    NJV$qd3 == 8 ~ "Graduate degree",
+    NJV$qd3 == 9 ~ "Prefer not to say",
+    TRUE ~ NA_character_
+  ),
+  levels = c(
+    "Less than high school",
+    "High school graduate",
+    "Some college or 2-year degree",
+    "4-year college graduate",
+    "Graduate degree",
+    "Prefer not to say"
+  )
+)
+
+# Crosstab of new education variable
+table(NJV$educ_recode, useNA = "ifany")
+
+
+library(srvyr)
+library(dplyr)
+library(tidyr)
+library(xtable)
+
+# Filter out NA in the education variable
+NJV_filtered_educ <- NJV %>%
+  filter(!is.na(educ_recode))
+
+# Create survey design
+survey_data_educ <- NJV_filtered_educ %>%
+  as_survey_design(weights = weight)
+
+# Example for q1
+counts_educ <- survey_data_educ %>%
+  group_by(educ_recode, q1) %>%
+  summarize(n = survey_total(na.rm = TRUE), .groups = "drop")
+
+percents_educ <- survey_data_educ %>%
+  group_by(educ_recode, q1) %>%
+  summarize(pct = survey_mean(proportion = TRUE, na.rm = TRUE), .groups = "drop") %>%
+  mutate(pct = round(100 * pct, 1))
+
+combined_educ <- left_join(counts_educ, percents_educ, by = c("educ_recode", "q1")) %>%
+  mutate(cell = paste0(round(n, 1), " (", pct, "%)")) %>%
+  select(educ_recode, q1, cell)
+
+crosstab_educ_q1 <- combined_educ %>%
+  pivot_wider(names_from = q1, values_from = cell, names_prefix = "q1_")
+
+print(xtable(crosstab_educ_q1, caption = "Support for School Board Elections by Education"), 
+      include.rownames = FALSE, type = "latex")
+
+
+
+generate_crosstab <- function(df, weight_var, row_var, col_var) {
+  df_filtered <- df %>%
+    filter(!is.na(!!rlang::sym(row_var)))  # remove NAs
+
+  survey_data <- df_filtered %>%
+    as_survey_design(weights = !!rlang::sym(weight_var))
+
+  counts <- survey_data %>%
+    group_by(!!rlang::sym(row_var), !!rlang::sym(col_var)) %>%
+    summarize(n = survey_total(na.rm = TRUE), .groups = "drop")
+
+  percents <- survey_data %>%
+    group_by(!!rlang::sym(row_var), !!rlang::sym(col_var)) %>%
+    summarize(pct = survey_mean(proportion = TRUE, na.rm = TRUE), .groups = "drop") %>%
+    mutate(pct = round(100 * pct, 1))
+
+  combined <- left_join(counts, percents, by = c(row_var, col_var)) %>%
+    mutate(cell = paste0(round(n, 1), " (", pct, "%)")) %>%
+    select(!!rlang::sym(row_var), !!rlang::sym(col_var), cell)
+
+  # Pivot to wide
+  wide <- combined %>%
+    pivot_wider(names_from = !!rlang::sym(col_var), values_from = cell, names_prefix = paste0(col_var, "_"))
+
+  return(wide)
+}
+
+ct_q1_educ <- generate_crosstab(NJV, weight_var = "weight", row_var = "educ_recode", col_var = "q1")
+ct_q4_educ <- generate_crosstab(NJV, weight_var = "weight", row_var = "educ_recode", col_var = "q4")
+ct_q6_educ <- generate_crosstab(NJV, weight_var = "weight", row_var = "educ_recode", col_var = "q6")
+ct_q8_educ <- generate_crosstab(NJV, weight_var = "weight", row_var = "educ_recode", col_var = "q8")
+
+# Print to LaTeX
+print(xtable(ct_q1_educ, caption = "Support for School Board Elections by Education"), type = "latex", include.rownames = FALSE)
+print(xtable(ct_q4_educ, caption = "Support for Local Elections by Education"), type = "latex", include.rownames = FALSE)
+print(xtable(ct_q6_educ, caption = "Support for State Elections by Education"), type = "latex", include.rownames = FALSE)
+print(xtable(ct_q8_educ, caption = "Support for National Elections by Education"), type = "latex", include.rownames = FALSE)
+
+
+
+```
+
+
+```{r county}
+
+#code 7 is essex
+table(NJV$qd8)
+
+NJV$county_group <- factor(
+  ifelse(NJV$qd8 == 7, "Essex County", "All Other Counties"),
+  levels = c("Essex County", "All Other Counties")
+)
+
+ct_q1_county <- generate_crosstab(NJV, weight_var = "weight", row_var = "county_group", col_var = "q1")
+ct_q4_county <- generate_crosstab(NJV, weight_var = "weight", row_var = "county_group", col_var = "q4")
+ct_q6_county <- generate_crosstab(NJV, weight_var = "weight", row_var = "county_group", col_var = "q6")
+ct_q8_county <- generate_crosstab(NJV, weight_var = "weight", row_var = "county_group", col_var = "q8")
+
+print(xtable(ct_q1_county, caption = "Support for School Board Elections by County"), type = "latex", include.rownames = FALSE)
+print(xtable(ct_q4_county, caption = "Support for Local Elections by County"), type = "latex", include.rownames = FALSE)
+print(xtable(ct_q6_county, caption = "Support for State Elections by County"), type = "latex", include.rownames = FALSE)
+print(xtable(ct_q8_county, caption = "Support for National Elections by County"), type = "latex", include.rownames = FALSE)
+
+
+```
+
+
+
+
+
+```{r white dems}
+
+
+colnames(NJV)
+#qd2 republican 1 and democrat 2
+
+
+#qd7, `1` = "White",`2` = "Black",`3` = "Asian"
+table(NJV$qd2)
+table(NJV$qd7)
+
+
+
+
+
+
+
+
+# White vs Black Democrats only
+NJV$group_white_black_dems <- factor(
+  dplyr::case_when(
+    NJV$qd2 == 2 & NJV$qd7 == 1 ~ "White Democrats",
+    NJV$qd2 == 2 & NJV$qd7 == 2 ~ "Black Democrats",
+    TRUE ~ NA_character_  # exclude everyone else
+  ),
+  levels = c("White Democrats", "Black Democrats")
+)
+
+# White Democrats vs White Republicans only
+NJV$group_white_dems_reps <- factor(
+  dplyr::case_when(
+    NJV$qd2 == 2 & NJV$qd7 == 1 ~ "White Democrats",
+    NJV$qd2 == 1 & NJV$qd7 == 1 ~ "White Republicans",
+    TRUE ~ NA_character_
+  ),
+  levels = c("White Democrats", "White Republicans")
+)
+
+NJV_white_black_dems <- NJV[!is.na(NJV$group_white_black_dems), ]
+NJV_white_dems_reps <- NJV[!is.na(NJV$group_white_dems_reps), ]
+
+
+ct_q1_white_black_dems <- generate_crosstab(NJV_white_black_dems, weight_var = "weight", row_var = "group_white_black_dems", col_var = "q1")
+ct_q4_white_black_dems <- generate_crosstab(NJV_white_black_dems, weight_var = "weight", row_var = "group_white_black_dems", col_var = "q4")
+ct_q6_white_black_dems <- generate_crosstab(NJV_white_black_dems, weight_var = "weight", row_var = "group_white_black_dems", col_var = "q6")
+ct_q8_white_black_dems <- generate_crosstab(NJV_white_black_dems, weight_var = "weight", row_var = "group_white_black_dems", col_var = "q8")
+
+ct_q1_white_dems_reps <- generate_crosstab(NJV_white_dems_reps, weight_var = "weight", row_var = "group_white_dems_reps", col_var = "q1")
+ct_q4_white_dems_reps <- generate_crosstab(NJV_white_dems_reps, weight_var = "weight", row_var = "group_white_dems_reps", col_var = "q4")
+ct_q6_white_dems_reps <- generate_crosstab(NJV_white_dems_reps, weight_var = "weight", row_var = "group_white_dems_reps", col_var = "q6")
+ct_q8_white_dems_reps <- generate_crosstab(NJV_white_dems_reps, weight_var = "weight", row_var = "group_white_dems_reps", col_var = "q8")
+
+
+print(xtable(ct_q1_white_black_dems, caption = "Support for School Board Elections: White vs. Black Democrats"), type = "latex", include.rownames = FALSE)
+print(xtable(ct_q4_white_black_dems, caption = "Support for Local Elections: White vs. Black Democrats"), type = "latex", include.rownames = FALSE)
+print(xtable(ct_q6_white_black_dems, caption = "Support for State Elections: White vs. Black Democrats"), 
+      type = "latex", include.rownames = FALSE)
+
+print(xtable(ct_q8_white_black_dems, caption = "Support for National Elections: White vs. Black Democrats"), 
+      type = "latex", include.rownames = FALSE)
+
+
+
+
+
+
+
+print(xtable(ct_q1_white_dems_reps, caption = "Support for School Board Elections: White Democrats vs. White Republicans"), 
+      type = "latex", include.rownames = FALSE)
+
+print(xtable(ct_q4_white_dems_reps, caption = "Support for Local Elections: White Democrats vs. White Republicans"), 
+      type = "latex", include.rownames = FALSE)
+
+print(xtable(ct_q6_white_dems_reps, caption = "Support for State Elections: White Democrats vs. White Republicans"), 
+      type = "latex", include.rownames = FALSE)
+
+print(xtable(ct_q8_white_dems_reps, caption = "Support for National Elections: White Democrats vs. White Republicans"), 
+      type = "latex", include.rownames = FALSE)
+
+
+table(NJV$qd2)
+table(NJV$qd7)
+
+```

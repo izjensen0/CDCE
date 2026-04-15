@@ -1,0 +1,6364 @@
+---
+title: "VotingIssuesPoll2020Analysis"
+author: "Isabelle Jensen"
+date: "2026-03-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
+library(gt)
+library(kableExtra)
+library(ggplot2)
+library(scales)
+
+
+library(haven)
+issue <- read_sav("2020-08-31 Post-UMD Voting Issues Data.sav")
+
+glimpse(issue)
+table(issue$PPWORKA)
+
+library(sjlabelled)
+
+get_label(issue)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r labeling}
+
+
+
+
+issue <- issue %>%
+  rename(
+    vote_pref_method = Q3,
+    vote_pref_timing = Q4
+  )
+
+
+issue <- issue %>%
+  rename(
+    conf_own_vote = Q18,
+    conf_inperson_elecday = Q19_1,
+    conf_inperson_early = Q19_2,
+    conf_mail = Q19_3,
+    conf_state = Q20,
+    conf_national = Q21
+  )
+
+
+
+issue <- issue %>%
+  rename(
+    usps_job_rating = Q22,
+    usps_ballot_confidence = Q23,
+    usps_mail_frequency = Q24,
+    usps_less_mail = Q25_1,
+    usps_slower = Q25_2,
+    usps_late_delivery = Q25_3
+  )
+
+
+issue <- issue %>%
+  rename(
+    vote_fair_white_black = Q40,
+    vote_fair_white_hispanic = Q41
+  )
+library(dplyr)
+library(sjlabelled)
+
+issue <- issue %>%
+  mutate(
+    PARTYID_num = as.numeric(PARTYID),
+    IDEO_num = as.numeric(IDEO)
+  )
+
+issue <- issue %>%
+  mutate(
+    dem = case_when(
+      PARTYID_num == 1 ~ 1,   # Democrat
+      PARTYID_num == 2 ~ 0,   # Republican
+      TRUE ~ NA_real_
+    )
+  )
+table(issue$dem, useNA = "ifany")
+
+issue <- issue %>%
+  mutate(
+    IDEO_clean = ifelse(IDEO_num == -1, NA, IDEO_num)
+  )
+summary(issue$IDEO_clean)
+
+issue <- issue %>%
+  mutate(
+    PARTYID_clean = ifelse(PARTYID_num == -1, NA, PARTYID_num)
+  )
+
+table(issue$PARTYID_clean, useNA="ifany")
+table(issue$dem, useNA="ifany")
+summary(issue$IDEO_clean)
+
+```
+
+
+
+```{r}
+
+
+#preference for how to cast vote in this fall's presidential election
+#How confident are you that the U.S. Postal Service will deliver mailed election ballots in a timely manner for this fall’s presidential election?
+#create vote by mail or not binary
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    vote_pref_method_clean = na_if(vote_pref_method, -1),
+    mail_pref = ifelse(vote_pref_method_clean == 2, 1,
+                       ifelse(vote_pref_method_clean %in% c(1, 3), 0, NA))
+  )
+
+
+model1 <- glm(mail_pref ~ usps_ballot_confidence + PARTYID + IDEO,
+              family = binomial,
+              data = issue)
+
+summary(model1)
+#People with less confidence in the timely deliver of their ballot are significantly less likely to use a mail in ballot coeff -0.476 and significant
+
+
+####looking at general performance rating of the usps and plan to vote by mail in fall####
+
+issue <- issue %>%
+  mutate(
+    usps_job_clean = na_if(usps_job_rating, -1)
+  )
+
+table(issue$usps_job_clean, useNA = "ifany")
+
+
+model2 <- glm(mail_pref ~ 
+                usps_job_clean + 
+                PARTYID + IDEO,
+              family = binomial,
+              data = issue)
+
+summary(model2)
+
+
+model2_weighted <- glm(
+  mail_pref ~ usps_job_clean + dem + IDEO_clean,
+  family = binomial,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model2_weighted)
+glimpse(issue$usps_job_clean)
+
+#negative significant relationship between job evaluation and deciding to vote by mail
+#as usps evaluations get worse probability of preferring mail decreases
+#-0.266
+#usps job is reverse coded
+
+##Do people express higher USPS ballot confidence in states they believe have more flexible vote-by-mail policies?####
+glimpse(issue)
+
+library(dplyr)
+library(MASS)
+
+issue <- issue %>%
+  mutate(
+    # USPS ballot confidence DV (Q23) - set -1 to NA
+    usps_ballot_confidence_clean = na_if(usps_ballot_confidence, -1),
+
+    # Q14 policy type: remove -1 and "Not sure" (=4)
+    mail_policy_type_clean = na_if(na_if(Q14, -1), 4),
+
+    # Q15 deadline: remove -1 and "Not sure" (very likely = 5 in your file)
+    mail_deadline_rule_clean = na_if(na_if(Q15, -1), 5),
+
+    # Q16 eligibility: remove -1 and "Not sure" (=3)
+    mail_eligibility_rule_clean = na_if(na_if(Q16, -1), 3)
+  )
+
+table(issue$Q15, useNA="ifany")
+
+issue <- issue %>%
+  mutate(
+    mail_deadline_clean = na_if(na_if(Q15, -1), 5)
+  )
+
+issue <- issue %>%
+  mutate(
+    mail_deadline_flex = case_when(
+      mail_deadline_clean == 1 ~ 4,
+      mail_deadline_clean == 2 ~ 3,
+      mail_deadline_clean == 3 ~ 2,
+      mail_deadline_clean == 4 ~ 1,
+      TRUE ~ NA_real_
+    )
+  )
+
+issue <- issue %>%
+  mutate(
+    mail_eligibility_binary = case_when(
+      Q16 == 1 ~ 1,
+      Q16 == 2 ~ 0,
+      Q16 %in% c(3, -1) ~ NA_real_
+    )
+  )
+glimpse(issue$Q16)
+
+issue <- issue %>%
+  mutate(
+    usps_ballot_conf_clean = na_if(usps_ballot_confidence, -1)
+  )
+
+issue <- issue %>%
+  mutate(
+    usps_ballot_conf_rev = 5 - usps_ballot_conf_clean
+  )
+
+
+
+model_deadline <- lm(usps_ballot_conf_rev ~ 
+                       mail_deadline_flex + 
+                       PARTYID + IDEO,
+                     data = issue)
+
+summary(model_deadline)
+#confidence in usps is not effected significantly by deadline
+
+
+
+
+######interesting#####
+model_eligibility <- lm(usps_ballot_conf_rev ~ 
+                          mail_eligibility_binary + 
+                          PARTYID + IDEO,
+                        data = issue)
+
+summary(model_eligibility)
+#"State allows any eligible citizen to vote by mail/absentee" "State only allows mail/absentee voting under certain conditions"
+#the eligibility flexibility makes usps confidence higher
+#the easier it is to be eligible for a mail in ballot the more people trust the usps to get the ballots there on time
+#postiive coeff 0.16683 significant p value 0.00617
+
+
+model_eligibility2 <- lm(mail_eligibility_binary ~ 
+                          usps_ballot_conf_rev + 
+                          PARTYID + IDEO,
+                        data = issue)
+
+summary(model_eligibility2)
+#causality would be hard to make sense of here
+
+issue <- issue %>%
+  mutate(
+    mail_program_clean = case_when(
+      Q14 %in% c(1,2,3) ~ Q14,
+      Q14 %in% c(4, -1) ~ NA_real_
+    )
+  )
+
+table(issue$mail_program_clean, useNA = "ifany")
+glimpse(issue$mail_program_clean)
+
+
+
+
+
+
+issue <- issue %>%
+  mutate(
+    mail_program_clean = case_when(
+      Q14 %in% c(1,2,3) ~ Q14,
+      Q14 %in% c(4,-1) ~ NA_real_
+    )
+  )
+
+table(issue$mail_program_clean, useNA = "ifany")
+
+
+issue <- issue %>%
+  mutate(
+    mail_program_binary = case_when(
+      mail_program_clean == 1 ~ 0,
+      mail_program_clean %in% c(2,3) ~ 1,
+      TRUE ~ NA_real_
+    )
+  )
+
+table(issue$mail_program_binary, useNA = "ifany")
+
+model_program_binary_w <- lm(
+  usps_ballot_conf_rev ~ 
+    mail_program_binary +
+    dem + 
+    IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_program_binary_w)
+
+
+
+
+
+
+
+
+
+model_program_extent <- lm(usps_ballot_conf_rev ~ 
+                             mail_program_clean +
+                             PARTYID + IDEO,
+                           data = issue)
+
+summary(model_program_extent)
+#Skipped" "Voters must contact their elections office to request a mail-in ballot" "All voters in your state will be automatically sent a ballot-request form" "All voters in your state will automatically be sent an election ballot" ...
+#the more expansive the mail program is the more people trust the usps
+#significant and positive coeff 0.0755 and p value 0.00697
+
+model_program_extent_w <- lm(usps_ballot_conf_rev ~ 
+                               mail_program_clean +
+                               PARTYID + IDEO,
+                             data = issue,
+                             weights = WEIGHT)
+
+summary(model_program_extent_w)
+
+#less significant with weights
+
+
+table(issue$ppethm, useNA = "ifany")
+
+
+table(issue$vote_fair_white_black, useNA = "ifany")
+
+
+summary(glm(mail_pref ~ vbmever + usps_ballot_confidence + PARTYID,
+    family = binomial, data = issue))
+#vote by mail ever and usps ballot confidence have a negative relationship with mail pref
+table(issue$mail_pref)
+
+
+
+
+
+
+```
+
+Call:
+lm(formula = usps_ballot_conf_rev ~ mail_eligibility_binary + 
+    PARTYID + IDEO, data = issue)
+
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-1.97992 -0.76571  0.09653  0.27521  1.35056 
+
+Coefficients:
+                        Estimate Std. Error t value Pr(>|t|)    
+(Intercept)              2.73775    0.09038  30.290  < 2e-16 ***
+mail_eligibility_binary  0.16683    0.06082   2.743  0.00617 ** 
+PARTYID                  0.02907    0.02694   1.079  0.28083    
+IDEO                    -0.01185    0.01490  -0.795  0.42684    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+
+Call:
+lm(formula = usps_ballot_conf_rev ~ mail_program_clean + PARTYID + 
+    IDEO, data = issue, weights = WEIGHT)
+
+Weighted Residuals:
+    Min      1Q  Median      3Q     Max 
+-2.9827 -0.5468  0.1153  0.3143  2.5393 
+
+Coefficients:
+                    Estimate Std. Error t value Pr(>|t|)    
+(Intercept)         2.849304   0.096055  29.663   <2e-16 ***
+mail_program_clean  0.057152   0.029327   1.949   0.0515 .  
+PARTYID             0.004911   0.026404   0.186   0.8525    
+IDEO               -0.029698   0.015235  -1.949   0.0515 .  
+
+Call:
+glm(formula = mail_pref ~ usps_job_clean + PARTYID + IDEO, family = binomial, 
+    data = issue, weights = WEIGHT)
+
+Coefficients:
+               Estimate Std. Error z value Pr(>|z|)    
+(Intercept)     0.52422    0.19543   2.682  0.00731 ** 
+usps_job_clean -0.18820    0.06202  -3.035  0.00241 ** 
+PARTYID         0.05130    0.05262   0.975  0.32958    
+IDEO           -0.22633    0.03263  -6.936 4.04e-12 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+
+```{r usps graphs}
+
+
+
+library(ggeffects)
+library(ggplot2)
+
+pred <- ggpredict(model2_weighted, terms = "usps_job_clean")
+
+ggplot(pred, aes(x = x, y = predicted)) +
+  geom_line(size = 1.3, color = "steelblue") +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = .2, fill = "steelblue") +
+  
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c(
+      "Excellent",
+      "Good",
+      "Only fair",
+      "Poor"
+    )
+  ) +
+  
+  scale_y_continuous(labels = scales::percent_format()) +
+  
+  labs(
+    x = "Evaluation of USPS Job Performance",
+    y = "Predicted Probability of Preferring Mail Voting",
+    title = "Preference for Mail Voting by USPS Job Evaluation"
+  ) +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+
+policy_plot <- issue %>%
+  filter(!is.na(mail_eligibility_binary),
+         !is.na(usps_ballot_conf_rev),
+         !is.na(WEIGHT)) %>%
+  group_by(mail_eligibility_binary) %>%
+  summarise(
+    confidence = weighted.mean(usps_ballot_conf_rev, WEIGHT, na.rm = TRUE)
+  )
+
+ggplot(policy_plot, aes(x = factor(mail_eligibility_binary), y = confidence)) +
+  geom_col(fill = "darkorange", width = .6) +
+
+  scale_x_discrete(
+    labels = c(
+      "State restricts mail voting",
+      "Any voter can vote by mail"
+    )
+  ) +
+
+  scale_y_continuous(
+    limits = c(1,4),
+    breaks = 1:4,
+    labels = c(
+      "Very confident",
+      "Somewhat confident",
+      "Not too confident",
+      "Not confident"
+    )
+  ) +
+
+  labs(
+    title = "USPS Ballot Delivery Confidence by Mail Voting Eligibility",
+    x = "Perceived Mail Voting Eligibility Rule",
+    y = "Confidence USPS Delivers Ballots"
+  ) +
+
+  theme_minimal(base_size = 13)
+
+
+policy_plot
+table(issue$mail_eligibility_binary, useNA = "ifany")
+summary(issue$usps_ballot_conf_rev)
+summary(issue$WEIGHT)
+
+
+
+
+library(dplyr)
+library(ggplot2)
+
+policy_plot <- issue %>%
+  filter(
+    !is.na(mail_eligibility_binary),
+    !is.na(usps_ballot_conf_rev),
+    !is.na(WEIGHT)
+  ) %>%
+  mutate(
+    eligibility_label = ifelse(
+      mail_eligibility_binary == 1,
+      "Any voter can vote by mail",
+      "State restricts mail voting"
+    )
+  ) %>%
+  group_by(eligibility_label) %>%
+  summarise(
+    confidence = weighted.mean(usps_ballot_conf_rev, WEIGHT, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+print(policy_plot)
+
+ggplot(policy_plot, aes(x = eligibility_label, y = confidence)) +
+  geom_col(fill = "darkorange", width = 0.6) +
+  coord_cartesian(ylim = c(1, 4)) +
+  scale_y_continuous(
+    breaks = 1:4,
+    labels = c(
+      "Not at all confident",
+      "Not too confident",
+      "Somewhat confident",
+      "Very confident"
+    )
+  ) +
+  labs(
+    title = "USPS Ballot Delivery Confidence by Mail Voting Eligibility",
+    x = "Perceived Mail Voting Eligibility Rule",
+    y = "Confidence USPS Delivers Ballots"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 20, hjust = 1)
+  )
+
+
+
+
+
+library(ggeffects)
+
+pred_interaction <- ggpredict(
+  model2_weighted,
+  terms = c("usps_job_clean", "IDEO")
+)
+
+ggplot(pred_interaction,
+       aes(x = x, y = predicted, color = group)) +
+
+  geom_line(linewidth = 1.2) +
+
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c(
+      "Excellent",
+      "Good",
+      "Only fair",
+      "Poor"
+    )
+  ) +
+
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+
+  labs(
+    title = "Mail Voting Preference by USPS Trust and Ideology",
+    x = "Evaluation of USPS Job Performance",
+    y = "Predicted Probability of Preferring Mail Voting",
+    color = "Ideology"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+library(ggeffects)
+
+issue <- issue %>%
+  mutate(
+    IDEO_clean = ifelse(as.numeric(IDEO) < 0, NA, as.numeric(IDEO)),
+    usps_job_clean = ifelse(as.numeric(usps_job_clean) < 0, NA, as.numeric(usps_job_clean))
+  )
+
+model2_weighted_clean <- glm(
+  mail_pref ~ usps_job_clean + IDEO_clean + PARTYID,
+  family = binomial,
+  data = issue,
+  weights = WEIGHT
+)
+
+pred_interaction <- ggpredict(
+  model2_weighted_clean,
+  terms = c("usps_job_clean", "IDEO_clean [1,2,3,4,5,6,7]")
+)
+
+pred_interaction$group <- factor(
+  pred_interaction$group,
+  levels = c("1", "2", "3", "4", "5", "6", "7"),
+  labels = c(
+    "Extremely Liberal",
+    "Liberal",
+    "Slightly Liberal",
+    "Moderate",
+    "Slightly Conservative",
+    "Conservative",
+    "Extremely Conservative"
+  )
+)
+
+ggplot(pred_interaction, aes(x = x, y = predicted, color = group, fill = group)) +
+  geom_line(linewidth = 1.1) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = 0.12, color = NA) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Excellent", "Good", "Only fair", "Poor")
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Predicted Probability of Preferring Mail Voting by USPS Evaluation and Ideology",
+    x = "Evaluation of USPS Job Performance",
+    y = "Predicted Probability of Preferring Mail Voting",
+    color = "Ideology",
+    fill = "Ideology"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    legend.position = "right"
+  )
+
+
+
+
+
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    PARTY_clean = case_when(
+      PARTYID == 1 ~ "Democrat",
+      PARTYID == 2 ~ "Republican",
+      PARTYID == 3 ~ "Independent",
+      TRUE ~ NA_character_
+    )
+  )
+
+model_party <- glm(
+  mail_pref ~ usps_job_clean + PARTY_clean + IDEO_clean,
+  family = binomial,
+  data = issue,
+  weights = WEIGHT
+)
+
+
+library(ggeffects)
+
+pred_party <- ggpredict(
+  model_party,
+  terms = c("usps_job_clean", "PARTY_clean")
+)
+
+library(ggplot2)
+
+ggplot(pred_party,
+       aes(x = x, y = predicted, color = group, fill = group)) +
+
+  geom_line(linewidth = 1.2) +
+
+  geom_ribbon(
+    aes(ymin = conf.low, ymax = conf.high),
+    alpha = 0.15,
+    color = NA
+  ) +
+
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c(
+      "Excellent",
+      "Good",
+      "Only fair",
+      "Poor"
+    )
+  ) +
+
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+
+  scale_color_manual(
+    values = c(
+      "Democrat" = "blue",
+      "Republican" = "red",
+      "Independent" = "purple"
+    )
+  ) +
+
+  scale_fill_manual(
+    values = c(
+      "Democrat" = "blue",
+      "Republican" = "red",
+      "Independent" = "purple"
+    )
+  ) +
+
+  labs(
+    title = "Predicted Probability of Preferring Mail Voting 
+    by USPS Evaluation and Party",
+    x = "Evaluation of USPS Job Performance",
+    y = "Predicted Probability of Preferring Mail Voting",
+    color = "Party",
+    fill = "Party"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    legend.position = "right"
+  )
+
+
+
+library(modelsummary)
+
+modelplot(model2_weighted) +
+  labs(
+    title = "Predictors of Mail Voting Preference",
+    x = "Coefficient Estimate (Log Odds)",
+    y = ""
+  ) +
+  theme_minimal(base_size = 13)
+
+```
+
+
+```{r racial}
+####racial#####
+
+library(dplyr)
+
+issue_clean <- issue %>%
+  mutate(
+    race_clean = na_if(ppethm, -1),
+    vote_fair_white_black_clean = na_if(vote_fair_white_black, -1)
+  )
+
+table(issue_clean$race_clean,
+      issue_clean$vote_fair_white_black_clean)
+
+
+
+prop.table(
+  table(issue_clean$race_clean,
+        issue_clean$vote_fair_white_black_clean),
+  margin = 1
+)
+
+
+issue_clean <- issue_clean %>%
+  mutate(
+    race_factor = factor(race_clean,
+                         levels = c(1,2,3,4,5),
+                         labels = c("White",
+                                    "Black",
+                                    "Other",
+                                    "Hispanic",
+                                    "Multiracial")),
+    
+    fairness_factor = factor(vote_fair_white_black_clean,
+                             levels = c(1,2,3),
+                             labels = c("Easier for White",
+                                        "Easier for Black",
+                                        "Equal treatment"))
+  )
+
+
+library(janitor)
+
+issue_clean %>%
+  tabyl(race_factor, fairness_factor) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+
+chisq.test(table(issue_clean$race_factor,
+                 issue_clean$fairness_factor))
+
+
+issue_clean <- issue_clean %>%
+  mutate(
+    vote_fair_white_hispanic_clean = na_if(vote_fair_white_hispanic, -1),
+    fairness_hispanic_factor = factor(vote_fair_white_hispanic_clean,
+                                       levels = c(1,2,3),
+                                       labels = c("Easier for White",
+                                                  "Easier for Hispanic",
+                                                  "Equal treatment"))
+  )
+
+issue_clean %>%
+  tabyl(race_factor, fairness_hispanic_factor) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+
+
+#Black respondents are much more likely than White respondents to believe elections make it easier for White citizens to vote.
+
+library(dplyr)
+
+issue_model <- issue %>%
+  mutate(
+    fairness_clean = case_when(
+      vote_fair_white_black %in% c(1,2,3) ~ vote_fair_white_black,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  filter(!is.na(fairness_clean))
+issue_model$fairness_factor <- factor(issue_model$fairness_clean,
+                                       levels = c(3,1,2),
+                                       labels = c("Equal treatment",
+                                                  "Easier for White",
+                                                  "Easier for Black"))
+
+issue_model$fairness_factor <- factor(issue_model$fairness_clean,
+                                       levels = c(3,1,2),
+                                       labels = c("Equal treatment",
+                                                  "Easier for White",
+                                                  "Easier for Black"))
+
+
+
+
+library(dplyr)
+
+issue_model <- issue %>%
+  mutate(
+    fairness_black_binary = case_when(
+      vote_fair_white_black == 1 ~ 1,   # Easier for White
+      vote_fair_white_black == 3 ~ 0,   # Equal treatment
+      vote_fair_white_black %in% c(2, -1) ~ NA_real_
+    )
+  )
+issue_model <- issue_model %>%
+  mutate(
+    fairness_hisp_binary = case_when(
+      vote_fair_white_hispanic == 1 ~ 1,
+      vote_fair_white_hispanic == 3 ~ 0,
+      vote_fair_white_hispanic %in% c(2, -1) ~ NA_real_
+    )
+  )
+
+table(issue_model$fairness_black_binary, useNA="ifany")
+table(issue_model$fairness_hisp_binary, useNA="ifany")
+issue_model <- issue_model %>%
+  mutate(
+    race_factor = factor(ppethm,
+                         levels = c(1,2,3,4,5),
+                         labels = c("White",
+                                    "Black",
+                                    "Other",
+                                    "Hispanic",
+                                    "Multiracial"))
+  )
+
+model_black_race <- glm(fairness_black_binary ~ race_factor,
+                        family = binomial,
+                        data = issue_model)
+
+summary(model_black_race)
+#every race (using white as the comparison) was more likely to say that white people are advantaged at the polls except hispanics which were not meaningfully different from whites in this
+
+
+
+model_black_controls <- glm(fairness_black_binary ~ 
+                              race_factor +
+                              PARTYID +
+                              IDEO,
+                            family = binomial,
+                            data = issue_model)
+
+summary(model_black_controls)
+#trend continues with controls
+
+
+model_hisp_controls <- glm(fairness_hisp_binary ~ 
+                             race_factor +
+                             PARTYID +
+                             IDEO,
+                           family = binomial,
+                           data = issue_model)
+
+summary(model_hisp_controls)
+
+#even when asked about hispanics hispanics dont seem to think they are less advantaged than whites in the polls but every other race does 
+
+
+exp(coef(model_black_controls))
+
+
+
+
+table(issue$ppethm)
+
+
+
+issue_model <- issue_model %>%
+  mutate(
+    white = ifelse(ppethm == 1, 1, 0),
+    black = ifelse(ppethm == 2, 1, 0),
+    hispanic = ifelse(ppethm == 3, 1, 0)
+  )
+
+
+issue_model <- issue_model %>%
+  mutate(
+    white = ifelse(is.na(ppethm), NA, ifelse(ppethm == 1, 1, 0)),
+    black = ifelse(is.na(ppethm), NA, ifelse(ppethm == 2, 1, 0)),
+    hispanic = ifelse(is.na(ppethm), NA, ifelse(ppethm == 3, 1, 0))
+  )
+
+model_black <- glm(fairness_black_binary ~ white + black + hispanic +
+                   PARTYID + IDEO,
+                   family = binomial,
+                   data = issue_model)
+
+summary(model_black)
+
+
+
+model_hisp <- glm(fairness_hisp_binary ~ white + black + hispanic +
+                  PARTYID + IDEO,
+                  family = binomial,
+                  data = issue_model)
+summary(model_hisp)
+
+
+
+model_black_weighted2 <- glm(
+  fairness_black_binary ~ white + black + hispanic + PARTYID + IDEO,
+  family = binomial,
+  data = issue_model,
+  weights = WEIGHT
+)
+
+model_hisp_weighted2 <- glm(
+  fairness_hisp_binary ~ white + black + hispanic + PARTYID + IDEO,
+  family = binomial,
+  data = issue_model,
+  weights = WEIGHT
+)
+summary(model_black_weighted2)
+summary(model_hisp_weighted2)
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+issue_plot <- issue %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White",
+      ppethm == 2 ~ "Black",
+      ppethm == 3 ~ "Other",
+      ppethm == 4 ~ "Hispanic",
+      ppethm == 5 ~ "Multiracial",
+      TRUE ~ NA_character_
+    ),
+    
+    fairness_black = case_when(
+      as.numeric(vote_fair_white_black) == 1 ~ "Easier for White",
+      as.numeric(vote_fair_white_black) == 2 ~ "Easier for Black",
+      as.numeric(vote_fair_white_black) == 3 ~ "Equal treatment",
+      TRUE ~ NA_character_
+    ),
+    
+    fairness_hisp = case_when(
+      as.numeric(vote_fair_white_hispanic) == 1 ~ "Easier for White",
+      as.numeric(vote_fair_white_hispanic) == 2 ~ "Easier for Hispanic",
+      as.numeric(vote_fair_white_hispanic) == 3 ~ "Equal treatment",
+      TRUE ~ NA_character_
+    )
+  )
+
+
+
+black_plot_data <- issue_plot %>%
+  filter(!is.na(race_group), !is.na(fairness_black)) %>%
+  count(race_group, fairness_black) %>%
+  group_by(race_group) %>%
+  mutate(percent = n / sum(n) * 100)
+
+ggplot(black_plot_data, aes(x = race_group, y = percent, fill = fairness_black)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Perceptions of Whether Voting Is Easier for White or Black Citizens",
+    x = "Respondent Race",
+    y = "Percent",
+    fill = "Response"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+hisp_plot_data <- issue_plot %>%
+  filter(!is.na(race_group), !is.na(fairness_hisp)) %>%
+  count(race_group, fairness_hisp) %>%
+  group_by(race_group) %>%
+  mutate(percent = n / sum(n) * 100)
+
+
+
+ggplot(hisp_plot_data, aes(x = race_group, y = percent, fill = fairness_hisp)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Perceptions of Whether Voting Is Easier for White or Hispanic Citizens",
+    x = "Respondent Race",
+    y = "Percent",
+    fill = "Response"
+  ) +
+  theme_minimal(base_size = 13)
+
+```
+
+race_factor Easier for White Easier for Black Equal treatment  NA_
+       White            35.2%             0.9%           62.7% 1.2%
+       Black            75.0%             0.0%           22.1% 2.9%
+       Other            44.4%             3.7%           49.4% 2.5%
+    Hispanic            38.5%             2.2%           57.0% 2.2%
+ Multiracial            55.8%             3.8%           40.4% 0.0%
+  race_factor Easier for White Easier for Hispanic Equal treatment  NA_
+       White            36.7%                1.1%           61.0% 1.2%
+       Black            71.5%                2.3%           23.8% 2.3%
+       Other            48.1%                6.2%           44.4% 1.2%
+    Hispanic            43.7%                2.2%           51.9% 2.2%
+ Multiracial            55.8%                1.9%           42.3% 0.0%
+
+
+
+Call:
+glm(formula = fairness_black_binary ~ race_factor, family = binomial, 
+    data = issue_model)
+
+Coefficients:
+                       Estimate Std. Error z value Pr(>|z|)    
+(Intercept)            -0.57691    0.05459 -10.568  < 2e-16 ***
+race_factorBlack        1.79914    0.19248   9.347  < 2e-16 ***
+race_factorOther        0.47155    0.23613   1.997  0.04583 *  
+race_factorHispanic     0.18435    0.18761   0.983  0.32579    
+race_factorMultiracial  0.89969    0.29169   3.084  0.00204 ** 
+## Including Plots
+
+Call:
+glm(formula = fairness_hisp_binary ~ race_factor + PARTYID + 
+    IDEO, family = binomial, data = issue_model)
+
+Coefficients:
+                       Estimate Std. Error z value Pr(>|z|)    
+(Intercept)             3.05831    0.21413  14.282  < 2e-16 ***
+race_factorBlack        1.43317    0.20755   6.905 5.02e-12 ***
+race_factorOther        0.67903    0.26152   2.596  0.00942 ** 
+race_factorHispanic     0.16936    0.21325   0.794  0.42708    
+race_factorMultiracial  0.63322    0.32437   1.952  0.05092 .  
+PARTYID                -0.11181    0.06079  -1.839  0.06586 .  
+IDEO                   -0.81439    0.04555 -17.879  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+
+Call:
+glm(formula = fairness_black_binary ~ white + black + hispanic + 
+    PARTYID + IDEO, family = binomial, data = issue_model)
+
+Coefficients:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  3.31757    0.26130  12.696  < 2e-16 ***
+white       -0.16726    0.18543  -0.902   0.3671    
+black        1.51371    0.26601   5.690 1.27e-08 ***
+hispanic     0.32083    0.30992   1.035   0.3006    
+PARTYID     -0.12155    0.06150  -1.977   0.0481 *  
+IDEO        -0.85545    0.04711 -18.160  < 2e-16 ***
+
+
+Call:
+glm(formula = fairness_hisp_binary ~ white + black + hispanic + 
+    PARTYID + IDEO, family = binomial, data = issue_model)
+
+Coefficients:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  3.35334    0.25910  12.942  < 2e-16 ***
+white       -0.30446    0.18216  -1.671   0.0946 .  
+black        1.13074    0.26018   4.346 1.39e-05 ***
+hispanic     0.37362    0.30634   1.220   0.2226    
+PARTYID     -0.10637    0.06058  -1.756   0.0791 .  
+IDEO        -0.81496    0.04553 -17.900  < 2e-16 ***
+
+
+Call:
+glm(formula = fairness_black_binary ~ white + black + hispanic + 
+    PARTYID + IDEO, family = binomial, data = issue_model, weights = WEIGHT)
+
+Coefficients:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  2.79018    0.22908  12.180  < 2e-16 ***
+white       -0.07415    0.15607  -0.475   0.6347    
+black        1.42502    0.21485   6.633  3.3e-11 ***
+hispanic     0.25960    0.26374   0.984   0.3250    
+PARTYID     -0.10481    0.05863  -1.788   0.0738 .  
+IDEO        -0.76652    0.04514 -16.979  < 2e-16 ***
+---
+
+Call:
+glm(formula = fairness_hisp_binary ~ white + black + hispanic + 
+    PARTYID + IDEO, family = binomial, data = issue_model, weights = WEIGHT)
+
+Coefficients:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  2.87595    0.22787  12.621  < 2e-16 ***
+white       -0.35843    0.15213  -2.356   0.0185 *  
+black        0.99223    0.21067   4.710 2.48e-06 ***
+hispanic     0.24456    0.25957   0.942   0.3461    
+PARTYID     -0.07209    0.05757  -1.252   0.2105    
+IDEO        -0.71518    0.04312 -16.588  < 2e-16 ***
+```{r fraud and suppression}
+
+glimpse(issue$PARTYID)
+glimpse(issue$IDEO)
+glimpse(issue$fraud_perception)
+glimpse(issue$Q27)
+glimpse(issue$Q28)
+glimpse(issue$Q29)
+
+
+library(dplyr)
+library(survey)
+library(sjlabelled)
+library(tidyr)
+library(ggplot2)
+
+design_issue <- svydesign(
+  ids = ~1,
+  weights = ~WEIGHT,
+  data = issue
+)
+
+
+issue <- issue %>%
+  mutate(
+    fraud_perception = ifelse(as.numeric(Q27) < 0, NA, as.numeric(Q27)),
+    suppression_perception = ifelse(as.numeric(Q28) < 0, NA, as.numeric(Q28)),
+    misinformation_perception = ifelse(as.numeric(Q28a) < 0, NA, as.numeric(Q28a))
+  )
+issue <- issue %>%
+  mutate(
+    fraud_perception_rev = 5 - fraud_perception,
+    suppression_perception_rev = 5 - suppression_perception,
+    misinformation_perception_rev = 5 - misinformation_perception
+  )
+
+design_issue <- update(
+  design_issue,
+  fraud_perception_rev = issue$fraud_perception_rev,
+  suppression_perception_rev = issue$suppression_perception_rev,
+  misinformation_perception_rev = issue$misinformation_perception_rev
+)
+
+
+model_fraud <- svyglm(
+  fraud_perception_rev ~ dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_fraud)
+#significant for both
+#Republicans believe there is more fraud and so do conservatives
+
+
+model_suppression <- svyglm(
+  suppression_perception_rev ~ dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_suppression)
+#suppression is significant for both party and ideo
+#democrats believe there is more supression 
+
+
+issue <- issue %>%
+  mutate(
+    fraud_supp_gap = fraud_perception_rev - suppression_perception_rev
+  )
+
+design_issue <- update(
+  design_issue,
+  fraud_supp_gap = issue$fraud_supp_gap
+)
+
+
+model_gap <- svyglm(
+  fraud_supp_gap ~ dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_gap)
+
+
+
+
+
+
+fraud_supp_plot <- svyby(
+  ~fraud_perception_rev + suppression_perception_rev,
+  ~IDEO_clean,
+  design_issue,
+  svymean,
+  na.rm = TRUE
+)
+
+ggplot(fraud_supp_plot) +
+  geom_line(aes(x = IDEO_clean, y = fraud_perception_rev, color = "Voter Fraud"), linewidth = 1.2) +
+  geom_line(aes(x = IDEO_clean, y = suppression_perception_rev, color = "Voter Suppression"), linewidth = 1.2) +
+  
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  
+  scale_y_continuous(
+    limits = c(1, 4),
+    breaks = 1:4,
+    labels = c(
+      "Rarely",
+      "Occasionally",
+      "Somewhat often",
+      "Very often"
+    )
+  ) +
+  
+  labs(
+    title = "Mean Perceptions of Voter Fraud and Suppression by Ideology",
+    x = "Ideology",
+    y = "Perceived Frequency",
+    color = "Perception"
+  ) +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.y = element_text(angle = 35, size = 9),
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    legend.position = "right"
+  )
+
+
+
+
+ggplot(issue, aes(x = IDEO_clean, weight = WEIGHT)) +
+  
+  geom_smooth(aes(y = fraud_perception_rev, color = "Voter Fraud"),
+              method = "lm", se = FALSE, linewidth = 1.2) +
+  
+  geom_smooth(aes(y = suppression_perception_rev, color = "Voter Suppression"),
+              method = "lm", se = FALSE, linewidth = 1.2) +
+  
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  
+  scale_y_continuous(
+    limits = c(1,4),
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  
+  labs(
+    title = "Regression of Election Threat Perceptions by Ideology",
+    x = "Ideology",
+    y = "Perceived Frequency",
+    color = "Perception"
+  ) +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.y = element_text(size = 9),
+    axis.text.x = element_text(angle = 35, hjust = 1)
+  )
+
+
+
+
+ggplot(issue, aes(x = IDEO_clean, weight = WEIGHT)) +
+  
+  geom_smooth(
+    aes(y = fraud_perception_rev, color = "Voter Fraud", fill = "Voter Fraud"),
+    method = "lm",
+    se = TRUE,
+    alpha = 0.2,
+    linewidth = 1.2
+  ) +
+  
+  geom_smooth(
+    aes(y = suppression_perception_rev, color = "Voter Suppression", fill = "Voter Suppression"),
+    method = "lm",
+    se = TRUE,
+    alpha = 0.2,
+    linewidth = 1.2
+  ) +
+
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+
+  scale_y_continuous(
+    limits = c(1,4),
+    breaks = 1:4,
+    labels = c(
+      "Rarely",
+      "Occasionally",
+      "Somewhat often",
+      "Very often"
+    )
+  ) +
+
+  labs(
+    title = "Regression Perceptions of Voter Fraud and Suppression by Ideology",
+    x = "Ideology",
+    y = "Perceived Frequency",
+    color = "Perception",
+    fill = "Perception"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.y = element_text(size = 9),
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    legend.position = "right"
+  )
+
+```
+Call:
+svyglm(formula = fraud_supp_gap ~ dem + IDEO_clean, design = design_issue)
+
+Survey design:
+update(design_issue, fraud_supp_gap = issue$fraud_supp_gap)
+
+Coefficients:
+            Estimate Std. Error t value Pr(>|t|)    
+(Intercept) -1.26268    0.18708  -6.749 2.33e-11 ***
+dem         -0.82011    0.11097  -7.391 2.77e-13 ***
+IDEO_clean   0.38070    0.03362  11.322  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Democrats are much more likely to believe voter suppression occurs more often than voter fraud.
+
+
+More conservative respondents are more likely to believe voter fraud occurs more often than voter suppression.
+
+Or equivalently:
+
+More liberal respondents are more likely to believe voter suppression is the bigger problem.
+
+
+
+Democrats and liberals tend to believe voter suppression is more common than voter fraud.
+
+Republicans and conservatives are more likely to believe voter fraud is more common than voter suppression.
+
+
+```{r confidence }
+#    fraud_perception = ifelse(as.numeric(Q27) < 0, NA, as.numeric(Q27)),
+issue <- issue %>%
+  mutate(
+    conf_own_vote_clean = ifelse(as.numeric(conf_own_vote) < 0, NA, as.numeric(conf_own_vote)),
+    conf_inperson_elecday_clean = ifelse(as.numeric(conf_inperson_elecday) < 0, NA, as.numeric(conf_inperson_elecday)),
+    conf_inperson_early_clean = ifelse(as.numeric(conf_inperson_early) < 0, NA, as.numeric(conf_inperson_early)),
+    conf_mail_clean = ifelse(as.numeric(conf_mail) < 0, NA, as.numeric(conf_mail)),
+    conf_state_clean = ifelse(as.numeric(conf_state) < 0, NA, as.numeric(conf_state)),
+    conf_national_clean = ifelse(as.numeric(conf_national) < 0, NA, as.numeric(conf_national))
+  )
+
+issue <- issue %>%
+  mutate(
+    conf_own_vote_rev = 5 - conf_own_vote_clean,
+    conf_inperson_elecday_rev = 5 - conf_inperson_elecday_clean,
+    conf_inperson_early_rev = 5 - conf_inperson_early_clean,
+    conf_mail_rev = 5 - conf_mail_clean,
+    conf_state_rev = 5 - conf_state_clean,
+    conf_national_rev = 5 - conf_national_clean
+  )
+issue <- issue %>%
+  mutate(
+    mail_vs_inperson = conf_mail_rev - conf_inperson_elecday_rev
+  )
+design_issue <- update(
+  design_issue,
+  conf_own_vote_rev = issue$conf_own_vote_rev,
+  conf_inperson_elecday_rev = issue$conf_inperson_elecday_rev,
+  conf_inperson_early_rev = issue$conf_inperson_early_rev,
+  conf_mail_rev = issue$conf_mail_rev,
+  conf_state_rev = issue$conf_state_rev,
+  conf_national_rev = issue$conf_national_rev,
+  mail_vs_inperson_gap = issue$mail_vs_inperson_gap
+)
+
+
+
+
+design_issue <- update(
+  design_issue,
+  mail_vs_inperson = issue$mail_vs_inperson
+)
+
+
+model_confidence <- svyglm(
+  mail_vs_inperson ~ dem + IDEO_clean + vbmever,
+  design = design_issue
+)
+
+summary(model_confidence)
+
+svyhist(
+  ~mail_vs_inperson,
+  design_issue,
+  main = "Trust in Mail vs In-Person Voting",
+  xlab = "Mail Confidence - In-Person Confidence"
+)
+
+
+
+
+design_issue <- update(
+  design_issue,
+  conf_mail_rev = issue$conf_mail_rev,
+  conf_inperson_elecday_rev = issue$conf_inperson_elecday_rev,
+  conf_inperson_early_rev = issue$conf_inperson_early_rev,
+  PARTYID = issue$PARTYID,
+  IDEO_clean = issue$IDEO_clean
+)
+
+
+model_conf_electionday <- svyglm(
+  conf_inperson_elecday_rev ~ dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_conf_electionday)
+
+##not significant
+
+
+
+
+model_conf_mail <- svyglm(
+  conf_mail_rev ~ dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_conf_mail)
+#dems and liberals trust mail more significantly
+
+
+model_conf_early <- svyglm(
+  conf_inperson_early_rev ~ dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_conf_early)
+
+#not significant
+
+
+
+
+
+
+library(survey)
+library(dplyr)
+
+conf_plot <- svyby(
+  ~conf_inperson_elecday_rev +
+   conf_inperson_early_rev +
+   conf_mail_rev,
+  ~IDEO_clean,
+  design_issue,
+  svymean,
+  na.rm = TRUE
+)
+
+
+library(tidyr)
+
+conf_plot_long <- conf_plot %>%
+  dplyr::select(
+    IDEO_clean,
+    conf_inperson_elecday_rev,
+    conf_inperson_early_rev,
+    conf_mail_rev
+  ) %>%
+  pivot_longer(
+    cols = -IDEO_clean,
+    names_to = "method",
+    values_to = "confidence"
+  )
+
+
+conf_plot_long$method <- recode(
+  conf_plot_long$method,
+  conf_inperson_elecday_rev = "Election Day Voting",
+  conf_inperson_early_rev = "Early In-Person Voting",
+  conf_mail_rev = "Mail Voting"
+)
+
+
+library(ggplot2)
+
+ggplot(conf_plot_long,
+       aes(x = IDEO_clean, y = confidence, color = method)) +
+
+  geom_line(linewidth = 1.2) +
+
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+
+  scale_y_continuous(
+    limits = c(1,4),
+    breaks = 1:4,
+    labels = c(
+      "Not at all confident",
+      "Not too confident",
+      "Somewhat confident",
+      "Very confident"
+    )
+  ) +
+
+  labs(
+    title = "Mean Confidence in Voting Methods by Ideology",
+    x = "Ideology",
+    y = "Confidence",
+    color = "Voting Method"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    axis.text.y = element_text(angle = 35, size = 9)
+  )
+
+
+
+```
+Call:
+svyglm(formula = conf_mail_rev ~ dem + IDEO_clean, design = design_issue)
+
+Survey design:
+update(design_issue, conf_mail_rev = issue$conf_mail_rev, conf_inperson_elecday_rev = issue$conf_inperson_elecday_rev, 
+    conf_inperson_early_rev = issue$conf_inperson_early_rev, 
+    PARTYID = issue$PARTYID, IDEO_clean = issue$IDEO_clean)
+
+Coefficients:
+            Estimate Std. Error t value Pr(>|t|)    
+(Intercept)  3.22724    0.16095  20.052  < 2e-16 ***
+dem          0.23953    0.09772   2.451   0.0144 *  
+IDEO_clean  -0.12700    0.02886  -4.400 1.18e-05 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+
+Democrats score about 0.24 points higher than Republicans on the mail-vs-in-person confidence gap, controlling for ideology and prior vote-by-mail experience.
+
+Substantively:
+
+Democrats trust mail voting more relative to in-person Election Day voting than Republicans do.
+
+
+More conservative respondents trust mail voting less relative to in-person voting.
+
+Or equivalently:
+
+More liberal respondents are relatively more favorable toward mail voting confidence.
+
+
+People without prior vote-by-mail experience have a mail-vs-in-person confidence score that is about 0.39 points lower.
+
+Substantively:
+
+People who have voted by mail before are more confident in mail voting relative to in-person voting.
+
+```{r trust in politicians}
+
+library(dplyr)
+library(survey)
+library(ggplot2)
+
+issue <- issue %>%
+  mutate(
+    trust_legislature = ifelse(as.numeric(Q39_1) < 0, NA, 5 - as.numeric(Q39_1)),
+    trust_state_elections = ifelse(as.numeric(Q39_3) < 0, NA, 5 - as.numeric(Q39_3)),
+    trust_local_elections = ifelse(as.numeric(Q39_4) < 0, NA, 5 - as.numeric(Q39_4)),
+    trust_president = ifelse(as.numeric(Q39_5) < 0, NA, 5 - as.numeric(Q39_5)),
+    trust_congress = ifelse(as.numeric(Q39_6) < 0, NA, 5 - as.numeric(Q39_6))
+  )
+
+design_issue <- update(
+  design_issue,
+  trust_legislature = issue$trust_legislature,
+  trust_president = issue$trust_president,
+  trust_congress = issue$trust_congress,
+  trust_state_elections = issue$trust_state_elections,
+  trust_local_elections = issue$trust_local_elections
+)
+
+model_trust_elections <- svyglm(
+  trust_state_elections ~ dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_trust_elections)
+
+svymean(
+  ~trust_legislature +
+    trust_president +
+    trust_congress +
+    trust_state_elections +
+    trust_local_elections,
+  design_issue,
+  na.rm = TRUE
+)
+
+svyby(
+  ~conf_mail_rev + conf_inperson_elecday_rev,
+  ~IDEO_clean,
+  design_issue,
+  svymean,
+  na.rm = TRUE
+)
+
+conf_plot <- svyby(
+  ~conf_mail_rev + conf_inperson_elecday_rev,
+  ~IDEO_clean,
+  design_issue,
+  svymean,
+  na.rm = TRUE
+)
+
+ggplot(conf_plot) +
+  geom_line(aes(x = IDEO_clean, y = conf_mail_rev, color = "Mail Voting")) +
+  geom_line(aes(x = IDEO_clean, y = conf_inperson_elecday_rev, color = "Election Day")) +
+  labs(
+    title = "Confidence in Voting Methods by Ideology",
+    x = "Ideology",
+    y = "Weighted Confidence"
+  )
+
+
+ggplot(conf_plot) +
+  geom_line(aes(x = IDEO_clean, y = conf_mail_rev, color = "Mail Voting"), linewidth = 1.2) +
+  geom_line(aes(x = IDEO_clean, y = conf_inperson_elecday_rev, color = "Election Day"), linewidth = 1.2) +
+
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+
+  scale_y_continuous(
+    limits = c(1,4),
+    breaks = 1:4,
+    labels = c(
+      "Not at all confident",
+      "Not too confident",
+      "Somewhat confident",
+      "Very confident"
+    )
+  ) +
+
+  labs(
+    title = "Mean Confidence in Voting Methods by Ideology",
+    x = "Ideology",
+    y = "Confidence in Voting Method",
+    color = "Voting Method"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.y = element_text(angle = 35,size = 9),          # smaller y labels
+    axis.text.x = element_text(angle = 35, size = 9, 
+                               hjust = 1),  # tilt x labels
+    legend.position = "right"
+  )
+
+
+
+
+
+
+
+
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+trust_plot <- svyby(
+  ~trust_legislature +
+    trust_president +
+    trust_congress +
+    trust_state_elections +
+    trust_local_elections,
+  ~IDEO_clean,
+  design_issue,
+  svymean,
+  na.rm = TRUE
+)
+
+
+trust_plot_long <- trust_plot %>%
+  pivot_longer(
+    cols = -c(IDEO_clean, starts_with("se.")),
+    names_to = "institution",
+    values_to = "confidence"
+  )
+
+trust_plot_long$institution <- recode(
+  trust_plot_long$institution,
+  trust_legislature = "State Legislature",
+  trust_president = "President",
+  trust_congress = "Congress",
+  trust_state_elections = "State Elections",
+  trust_local_elections = "Local Elections"
+)
+
+ggplot(trust_plot_long, aes(x = IDEO_clean, y = confidence, color = institution)) +
+  
+  geom_line(linewidth = 1.2) +
+  
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  
+  scale_y_continuous(
+    limits = c(1,4),
+    breaks = 1:4,
+    labels = c(
+      "Not at all confident",
+      "Not too confident",
+      "Somewhat confident",
+      "Very confident"
+    )
+  ) +
+  
+  labs(
+    title = "Confidence in Political Institutions by Ideology",
+    x = "Ideology",
+    y = "Confidence",
+    color = "Institution"
+  ) +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.y = element_text(size = 9),
+    axis.text.x = element_text(angle = 35, hjust = 1)
+  )
+```
+
+
+
+
+
+```{r}
+
+
+library(dplyr)
+library(survey)
+
+
+
+issue <- issue %>%
+  mutate(
+    white = case_when(
+      ppethm == 1 ~ 1,
+      ppethm %in% c(2, 3, 4, 5) ~ 0,
+      TRUE ~ NA_real_
+    ),
+    black = case_when(
+      ppethm == 2 ~ 1,
+      ppethm %in% c(1, 3, 4, 5) ~ 0,
+      TRUE ~ NA_real_
+    )
+  )
+
+design_issue <- update(
+  design_issue,
+  white = issue$white,
+  black = issue$black
+)
+
+
+model_fraud_race_w <- svyglm(
+  fraud_perception_rev ~ black + white + dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_fraud_race_w)
+
+model_supp_race_w <- svyglm(
+  suppression_perception_rev ~ black + dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_supp_race_w)
+
+
+
+issue <- issue %>%
+  mutate(
+    hispanic = case_when(
+      ppethm == 4 ~ 1,
+      ppethm %in% c(1, 2, 3, 5) ~ 0,
+      TRUE ~ NA_real_
+    )
+  )
+table(issue$hispanic, useNA = "ifany")
+table(issue$ppethm, useNA = "ifany")
+design_issue <- update(
+  design_issue,
+  black = issue$black,
+  hispanic = issue$hispanic,
+  dem = issue$dem,
+  IDEO_clean = issue$IDEO_clean,
+  misinformation_perception_rev = issue$misinformation_perception_rev
+)
+
+model_misinfo_race_w <- svyglm(
+  misinformation_perception_rev ~ black + dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_misinfo_race_w)
+
+
+
+
+library(survey)
+library(dplyr)
+library(ggplot2)
+
+misinfo_plot <- svyby(
+  ~misinformation_perception_rev,
+  ~IDEO_clean,
+  design_issue,
+  svymean,
+  vartype = "ci",
+  na.rm = TRUE
+)
+
+
+
+ggplot(misinfo_plot,
+       aes(x = IDEO_clean, y = misinformation_perception_rev)) +
+  
+  geom_line(linewidth = 1.2, color = "darkred") +
+
+  
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  
+  scale_y_continuous(
+  limits = c(1,4),
+  breaks = c(1,2,3,4),
+  labels = c(
+    "Not at all often",
+    "Not too often",
+    "Somewhat often",
+    "Very often"
+  )
+  ) +
+  
+  labs(
+    title = "Mean Perception of Election Misinformation by Ideology",
+    x = "Ideology",
+    y = "How Often Misinformation Occurs"
+  ) +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(size = 9 ,angle = 35, hjust = 1),
+    axis.text.y = element_text(size = 9)
+  )
+
+
+
+
+model_misinfo_ideo <- svyglm(
+  misinformation_perception_rev ~ IDEO_clean,
+  design = design_issue
+)
+
+summary(model_misinfo_ideo)
+
+misinfo_pred <- data.frame(
+  IDEO_clean = 1:7
+)
+
+pred_out <- predict(
+  model_misinfo_ideo,
+  newdata = misinfo_pred,
+  se.fit = TRUE
+)
+
+misinfo_pred$fit <- as.numeric(pred_out)
+misinfo_pred$se <- sqrt(attr(pred_out, "var"))
+misinfo_pred$lower <- misinfo_pred$fit - 1.96 * misinfo_pred$se
+misinfo_pred$upper <- misinfo_pred$fit + 1.96 * misinfo_pred$se
+
+
+
+
+library(ggplot2)
+
+ggplot(misinfo_pred, aes(x = IDEO_clean, y = fit)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              fill = "darkred", alpha = 0.2) +
+  geom_line(color = "darkred", linewidth = 1.2) +
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  scale_y_continuous(
+    limits = c(1, 4),
+    breaks = c(1, 2, 3, 4),
+    labels = c(
+      "Not at all often",
+      "Not too often",
+      "Somewhat often",
+      "Very often"
+    )
+  ) +
+  labs(
+    title = "Regression of Misinformation Perception by Ideology",
+    x = "Ideology",
+    y = "Predicted Perception of Misinformation Frequency"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    axis.text.y = element_text(size = 9)
+  )
+
+
+
+
+
+
+
+library(dplyr)
+
+misinfo_race <- issue %>%
+  filter(
+    !is.na(misinformation_perception_rev),
+    ppethm %in% c(1,2,4)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White",
+      ppethm == 2 ~ "Black",
+      ppethm == 4 ~ "Hispanic"
+    )
+  )
+
+
+library(ggplot2)
+
+ggplot(misinfo_race,
+       aes(x = misinformation_perception_rev,
+           fill = race_group,
+           color = race_group)) +
+
+  geom_density(alpha = .25, linewidth = 1) +
+
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c(
+      "Not at all often",
+      "Not too often",
+      "Somewhat often",
+      "Very often"
+    )
+  ) +
+
+  scale_fill_manual(
+    values = c(
+      "White" = "gray40",
+      "Black" = "darkblue",
+      "Hispanic" = "darkorange"
+    )
+  ) +
+
+  scale_color_manual(
+    values = c(
+      "White" = "gray40",
+      "Black" = "darkblue",
+      "Hispanic" = "darkorange"
+    )
+  ) +
+
+  labs(
+    title = "Perceived Frequency of Election Misinformation by Race",
+    x = "Perceived Frequency of Misinformation",
+    y = "Density",
+    fill = "Race",
+    color = "Race"
+  ) +
+
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+
+library(dplyr)
+
+misinfo_race <- issue %>%
+  filter(
+    !is.na(misinformation_perception_rev),
+    ppethm %in% c(1,2,4)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White",
+      ppethm == 2 ~ "Black",
+      ppethm == 4 ~ "Hispanic"
+    )
+  )
+
+
+
+library(ggplot2)
+
+ggplot(misinfo_race,
+       aes(x = factor(misinformation_perception_rev),
+           fill = race_group)) +
+
+  geom_bar(aes(y = after_stat(prop),
+               group = race_group),
+           position = "dodge") +
+
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+
+  scale_x_discrete(
+    labels = c(
+      "Not at all often",
+      "Not too often",
+      "Somewhat often",
+      "Very often"
+    )
+  ) +
+
+  scale_fill_manual(
+    values = c(
+      "White" = "gray40",
+      "Black" = "darkblue",
+      "Hispanic" = "darkorange"
+    )
+  ) +
+
+  labs(
+    title = "Perceived Frequency of Election Misinformation by Race",
+    x = "How Often Misinformation Occurs",
+    y = "Percent of Respondents (Within Race)",
+    fill = "Race"
+  ) +
+
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+```
+
+
+
+
+```{r trus in officials}
+
+
+
+design_issue <- update(
+  design_issue,
+  trust_legislature = issue$trust_legislature,
+  trust_president = issue$trust_president,
+  trust_congress = issue$trust_congress,
+  trust_state_elections = issue$trust_state_elections,
+  trust_local_elections = issue$trust_local_elections,
+  black = issue$black,
+  hispanic = issue$hispanic,
+  PARTYID = issue$PARTYID,
+  IDEO_clean = issue$IDEO_clean
+)
+
+
+model_trust_legislature <- svyglm(
+  trust_legislature ~ black + white + dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_trust_legislature)
+#ideology lightly significant liberals are more supportive
+
+
+model_trust_president <- svyglm(
+  trust_president ~ black + white + dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_trust_president)
+#trust in president is significant for democrat, ideo, and black
+
+
+
+
+model_trust_congress <- svyglm(
+  trust_congress ~ black + hispanic + dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_trust_congress)
+#ideo barely significant liberals more trusting of congress
+
+
+model_trust_state_elections <- svyglm(
+  trust_state_elections ~ black + hispanic + dem + IDEO_clean,
+  design = design_issue
+)
+
+summary(model_trust_state_elections)
+#ideology significant more trust from liberals
+
+
+
+
+```
+
+
+
+
+
+```{R race subsets and ideo}
+
+
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    
+    vote_fair_white_black_clean =
+      ifelse(vote_fair_white_black %in% c(-1, NA), NA, vote_fair_white_black),
+    
+    vote_fair_white_hispanic_clean =
+      ifelse(vote_fair_white_hispanic %in% c(-1, NA), NA, vote_fair_white_hispanic),
+    
+    
+    fairness_black_binary =
+      case_when(
+        vote_fair_white_black_clean == 1 ~ 1,
+        vote_fair_white_black_clean == 3 ~ 0,
+        TRUE ~ NA_real_
+      ),
+    
+    
+    fairness_hisp_binary =
+      case_when(
+        vote_fair_white_hispanic_clean == 1 ~ 1,
+        vote_fair_white_hispanic_clean == 3 ~ 0,
+        TRUE ~ NA_real_
+      )
+  )
+
+table(issue$fairness_black_binary, useNA = "ifany")
+table(issue$fairness_hisp_binary, useNA = "ifany")
+
+
+
+issue <- issue %>%
+  mutate(
+    ideology_label = factor(
+      IDEO_clean,
+      levels = 1:7,
+      labels = c(
+        "Extremely Liberal",
+        "Liberal",
+        "Slightly Liberal",
+        "Moderate",
+        "Slightly Conservative",
+        "Conservative",
+        "Extremely Conservative"
+      )
+    )
+  )
+
+
+white_data <- issue %>%
+  filter(ppethm == 1)
+
+black_data <- issue %>%
+  filter(ppethm == 2)
+
+hispanic_data <- issue %>%
+  filter(ppethm == 4)
+
+
+library(janitor)
+
+white_data %>%
+  filter(!is.na(fairness_black_binary), !is.na(ideology_label)) %>%
+  tabyl(ideology_label, fairness_black_binary) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+
+white_data %>%
+  filter(!is.na(fairness_hisp_binary), !is.na(ideology_label)) %>%
+tabyl(ideology_label, fairness_hisp_binary) %>%
+adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+
+
+black_data %>%
+  filter(!is.na(fairness_black_binary), !is.na(ideology_label)) %>%
+  tabyl(ideology_label, fairness_black_binary) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+
+black_data %>%
+  filter(!is.na(fairness_hisp_binary), !is.na(ideology_label)) %>%
+  tabyl(ideology_label, fairness_hisp_binary) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+
+hispanic_data %>%
+  filter(!is.na(fairness_black_binary), !is.na(ideology_label)) %>%
+  tabyl(ideology_label, fairness_black_binary) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+
+hispanic_data %>%
+  filter(!is.na(fairness_hisp_binary), !is.na(ideology_label)) %>%
+  tabyl(ideology_label, fairness_hisp_binary) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+
+
+
+model_white <- glm(
+  fairness_black_binary ~ dem + IDEO_clean,
+  family = binomial,
+  data = white_data
+)
+
+summary(model_white)
+#significant on both counts as would be expected with liberals and dems believing black people have a hard time voting
+
+
+model_white_hisp <- glm(
+  fairness_hisp_binary ~ dem + IDEO_clean,
+  family = binomial,
+  data = white_data
+)
+
+summary(model_white_hisp)
+#significant in expected direction white dems and liberals think its 
+
+model_black_hisp <- glm(
+  fairness_hisp_binary ~ dem + IDEO_clean,
+  family = binomial,
+  data = black_data
+)
+
+summary(model_black_hisp)
+#only dem significant democrats are more likely to say white people have it easier than hispanics
+
+
+
+model_black <- glm(
+  fairness_black_binary ~ dem + IDEO_clean,
+  family = binomial,
+  data = black_data
+)
+
+summary(model_black)
+
+model_hisp_black <- glm(
+  fairness_black_binary ~ dem + IDEO_clean,
+  family = binomial,
+  data = hispanic_data
+)
+
+summary(model_hisp_black)
+#only ideology significant
+
+model_hispanic <- glm(
+  fairness_hisp_binary ~ dem + IDEO_clean,
+  family = binomial,
+  data = hispanic_data
+)
+
+summary(model_hispanic)
+#only ideology fully significant
+
+
+
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+
+fairness_plot_data <- issue %>%
+  filter(ppethm %in% c(1, 2, 4)) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    ),
+    ideology_label = factor(
+      IDEO_clean,
+      levels = 1:7,
+      labels = c(
+        "Extremely Liberal",
+        "Liberal",
+        "Slightly Liberal",
+        "Moderate",
+        "Slightly Conservative",
+        "Conservative",
+        "Extremely Conservative"
+      )
+    ),
+    fairness_black_label = factor(
+      fairness_black_binary,
+      levels = c(0, 1),
+      labels = c("Equal treatment", "Whites advantaged")
+    ),
+    fairness_hisp_label = factor(
+      fairness_hisp_binary,
+      levels = c(0, 1),
+      labels = c("Equal treatment", "Whites advantaged")
+    )
+  )
+
+
+
+model_prob_black <- glm(
+  fairness_black_binary ~ IDEO_clean * race_group,
+  family = binomial,
+  data = fairness_plot_data %>% filter(!is.na(fairness_black_binary), !is.na(IDEO_clean))
+)
+
+pred_black <- expand.grid(
+  IDEO_clean = 1:7,
+  race_group = c("White respondents", "Black respondents", "Hispanic respondents")
+)
+
+pred_black_out <- predict(
+  model_prob_black,
+  newdata = pred_black,
+  type = "link",
+  se.fit = TRUE
+)
+
+pred_black$fit_link <- pred_black_out$fit
+pred_black$se_link <- pred_black_out$se.fit
+pred_black$fit <- plogis(pred_black$fit_link)
+pred_black$lower <- plogis(pred_black$fit_link - 1.96 * pred_black$se_link)
+pred_black$upper <- plogis(pred_black$fit_link + 1.96 * pred_black$se_link)
+
+ggplot(pred_black, aes(x = IDEO_clean, y = fit, color = race_group, fill = race_group)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.15, color = NA) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Predicted Probability of Saying Whites Have an Advantage in Voting\n(White vs Black Fairness Question)",
+    x = "Ideology",
+    y = "Predicted Probability",
+    color = "Respondent group",
+    fill = "Respondent group"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    axis.text.y = element_text(size = 9)
+  )
+
+
+
+
+
+
+
+
+model_prob_hisp <- glm(
+  fairness_hisp_binary ~ IDEO_clean * race_group,
+  family = binomial,
+  data = fairness_plot_data %>% filter(!is.na(fairness_hisp_binary), !is.na(IDEO_clean))
+)
+
+pred_hisp <- expand.grid(
+  IDEO_clean = 1:7,
+  race_group = c("White respondents", "Black respondents", "Hispanic respondents")
+)
+
+pred_hisp_out <- predict(
+  model_prob_hisp,
+  newdata = pred_hisp,
+  type = "link",
+  se.fit = TRUE
+)
+
+pred_hisp$fit_link <- pred_hisp_out$fit
+pred_hisp$se_link <- pred_hisp_out$se.fit
+pred_hisp$fit <- plogis(pred_hisp$fit_link)
+pred_hisp$lower <- plogis(pred_hisp$fit_link - 1.96 * pred_hisp$se_link)
+pred_hisp$upper <- plogis(pred_hisp$fit_link + 1.96 * pred_hisp$se_link)
+
+ggplot(pred_hisp, aes(x = IDEO_clean, y = fit, color = race_group, fill = race_group)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.15, color = NA) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Predicted Probability of Saying Whites Have an Advantage in Voting\n(White vs Hispanic Fairness Question)",
+    x = "Ideology",
+    y = "Predicted Probability",
+    color = "Respondent group",
+    fill = "Respondent group"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    axis.text.y = element_text(size = 9)
+  )
+
+
+
+
+
+
+
+black_check <- issue %>%
+  filter(ppethm == 2,
+         !is.na(fairness_black_binary),
+         !is.na(IDEO_clean)) %>%
+  group_by(IDEO_clean) %>%
+  summarise(
+    n = n(),
+    pct_whites_advantaged = mean(fairness_black_binary, na.rm = TRUE)
+  )
+
+black_check
+
+
+
+black_check_w <- issue %>%
+  filter(ppethm == 2,
+         !is.na(fairness_black_binary),
+         !is.na(IDEO_clean),
+         !is.na(WEIGHT)) %>%
+  group_by(IDEO_clean) %>%
+  summarise(
+    weighted_pct = weighted.mean(fairness_black_binary, WEIGHT, na.rm = TRUE),
+    n = n()
+  )
+
+black_check_w
+
+
+
+ggplot(black_check_w, aes(x = IDEO_clean, y = weighted_pct)) +
+  geom_line(linewidth = 1.2, color = "darkgreen") +
+  geom_point(size = 3, color = "darkgreen") +
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Black Respondents: Raw Weighted Probability of Saying Whites Are Advantaged",
+    x = "Ideology",
+    y = "Weighted Percent"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+
+
+
+
+black_only <- issue %>%
+  filter(ppethm == 2,
+         !is.na(fairness_black_binary),
+         !is.na(IDEO_clean))
+
+model_black_only <- glm(
+  fairness_black_binary ~ IDEO_clean,
+  family = binomial,
+  data = black_only
+)
+
+summary(model_black_only)
+#not significant with just ideology
+
+
+
+
+library(dplyr)
+
+fairness_plot_data <- issue %>%
+  filter(ppethm %in% c(1,2,4)) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    ),
+    
+    ideology_label = factor(
+      IDEO_clean,
+      levels = 1:7,
+      labels = c(
+        "Extremely Liberal",
+        "Liberal",
+        "Slightly Liberal",
+        "Moderate",
+        "Slightly Conservative",
+        "Conservative",
+        "Extremely Conservative"
+      )
+    )
+  )
+
+
+
+design_fair <- svydesign(
+  ids = ~1,
+  weights = ~WEIGHT,
+  data = fairness_plot_data
+)
+model_prob_black_w <- svyglm(
+  fairness_black_binary ~ IDEO_clean * race_group,
+  design = design_fair,
+  family = quasibinomial()
+)
+
+
+pred_black <- expand.grid(
+  IDEO_clean = 1:7,
+  race_group = c(
+    "White respondents",
+    "Black respondents",
+    "Hispanic respondents"
+  )
+)
+
+pred_out <- predict(
+  model_prob_black_w,
+  newdata = pred_black,
+  type = "link",
+  se.fit = TRUE
+)
+
+pred_black$fit_link <- as.numeric(pred_out)
+pred_black$se_link <- sqrt(attr(pred_out, "var"))
+
+pred_black$fit <- plogis(pred_black$fit_link)
+pred_black$lower <- plogis(pred_black$fit_link - 1.96 * pred_black$se_link)
+pred_black$upper <- plogis(pred_black$fit_link + 1.96 * pred_black$se_link)
+
+
+
+
+library(ggplot2)
+
+ggplot(pred_black,
+       aes(x = IDEO_clean,
+           y = fit,
+           color = race_group,
+           fill = race_group)) +
+
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              alpha = .15,
+              color = NA) +
+
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+
+  labs(
+    title = "Weighted Predicted Probability Easier for White people to vote
+    Compared to Black or Equal",
+    x = "Ideology",
+    y = "Predicted Probability",
+    color = "Respondent group",
+    fill = "Respondent group"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1)
+  )
+
+
+
+
+
+
+
+
+
+library(dplyr)
+library(survey)
+
+fairness_plot_data <- issue %>%
+  filter(ppethm %in% c(1, 2, 4)) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    )
+  ) %>%
+  filter(
+    !is.na(fairness_hisp_binary),
+    !is.na(IDEO_clean),
+    !is.na(WEIGHT)
+  )
+
+design_fair_hisp <- svydesign(
+  ids = ~1,
+  weights = ~WEIGHT,
+  data = fairness_plot_data
+)
+
+model_prob_hisp_w <- svyglm(
+  fairness_hisp_binary ~ IDEO_clean * race_group,
+  design = design_fair_hisp,
+  family = quasibinomial()
+)
+
+pred_hisp <- expand.grid(
+  IDEO_clean = 1:7,
+  race_group = c(
+    "White respondents",
+    "Black respondents",
+    "Hispanic respondents"
+  )
+)
+
+pred_out <- predict(
+  model_prob_hisp_w,
+  newdata = pred_hisp,
+  type = "link",
+  se.fit = TRUE
+)
+
+pred_hisp$fit_link <- as.numeric(pred_out)
+pred_hisp$se_link <- sqrt(attr(pred_out, "var"))
+
+pred_hisp$fit <- plogis(pred_hisp$fit_link)
+pred_hisp$lower <- plogis(pred_hisp$fit_link - 1.96 * pred_hisp$se_link)
+pred_hisp$upper <- plogis(pred_hisp$fit_link + 1.96 * pred_hisp$se_link)
+
+
+library(ggplot2)
+
+ggplot(pred_hisp,
+       aes(x = IDEO_clean,
+           y = fit,
+           color = race_group,
+           fill = race_group)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              alpha = 0.15,
+              color = NA) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Weighted Predicted Probability of Saying Whites Have an Advantage in Voting\n(White vs Hispanic Fairness Question)",
+    x = "Ideology",
+    y = "Predicted Probability",
+    color = "Respondent group",
+    fill = "Respondent group"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1)
+  )
+
+
+
+
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+
+fairness_black_plot <- issue %>%
+  filter(
+    ppethm %in% c(1, 2, 4),
+    !is.na(fairness_black_binary),
+    !is.na(IDEO_clean),
+    !is.na(WEIGHT)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    ),
+    fairness_black_label = factor(
+      fairness_black_binary,
+      levels = c(0, 1),
+      labels = c("Equal treatment", "Whites advantaged")
+    )
+  ) %>%
+  group_by(race_group, IDEO_clean, fairness_black_label) %>%
+  summarise(
+    wt = sum(WEIGHT),
+    .groups = "drop"
+  ) %>%
+  group_by(race_group, IDEO_clean) %>%
+  mutate(
+    percent = wt / sum(wt)
+  )
+
+ggplot(fairness_black_plot,
+       aes(x = factor(IDEO_clean),
+           y = percent,
+           fill = fairness_black_label)) +
+  geom_col() +
+  facet_wrap(~race_group) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_x_discrete(
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Equal treatment" = "gray70",
+      "Whites advantaged" = "steelblue"
+    )
+  ) +
+  labs(
+    title = "Weighted Beliefs About Voting Fairness by Ideology\n(White vs Black Fairness Question)",
+    x = "Ideology",
+    y = "Percent",
+    fill = "Response"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    axis.text.y = element_text(size = 9)
+  )
+
+
+
+fairness_hisp_plot <- issue %>%
+  filter(
+    ppethm %in% c(1, 2, 4),
+    !is.na(fairness_hisp_binary),
+    !is.na(IDEO_clean),
+    !is.na(WEIGHT)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    ),
+    fairness_hisp_label = factor(
+      fairness_hisp_binary,
+      levels = c(0, 1),
+      labels = c("Equal treatment", "Whites advantaged")
+    )
+  ) %>%
+  group_by(race_group, IDEO_clean, fairness_hisp_label) %>%
+  summarise(
+    wt = sum(WEIGHT),
+    .groups = "drop"
+  ) %>%
+  group_by(race_group, IDEO_clean) %>%
+  mutate(
+    percent = wt / sum(wt)
+  )
+
+ggplot(fairness_hisp_plot,
+       aes(x = factor(IDEO_clean),
+           y = percent,
+           fill = fairness_hisp_label)) +
+  geom_col() +
+  facet_wrap(~race_group) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_x_discrete(
+    labels = c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Equal treatment" = "gray70",
+      "Whites advantaged" = "darkorange"
+    )
+  ) +
+  labs(
+    title = "Weighted Beliefs About Voting Fairness by Ideology\n(White vs Hispanic Fairness Question)",
+    x = "Ideology",
+    y = "Percent",
+    fill = "Response"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    axis.text.y = element_text(size = 9)
+  )
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+
+fairness_black_plot <- issue %>%
+  filter(
+    ppethm %in% c(1,2,4),
+    !is.na(fairness_black_binary),
+    !is.na(IDEO_clean),
+    !is.na(WEIGHT)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    ),
+    fairness_black_label = factor(
+      fairness_black_binary,
+      levels = c(0,1),
+      labels = c("Equal treatment","Whites advantaged")
+    )
+  )
+
+# weighted percentages
+fairness_black_stack <- fairness_black_plot %>%
+  group_by(race_group, IDEO_clean, fairness_black_label) %>%
+  summarise(
+    wt = sum(WEIGHT),
+    .groups="drop"
+  ) %>%
+  group_by(race_group, IDEO_clean) %>%
+  mutate(percent = wt/sum(wt))
+
+# unweighted counts
+fairness_black_n <- fairness_black_plot %>%
+  group_by(race_group, IDEO_clean) %>%
+  summarise(n = n(), .groups="drop")
+
+ggplot(fairness_black_stack,
+       aes(x=factor(IDEO_clean),
+           y=percent,
+           fill=fairness_black_label)) +
+
+  geom_col() +
+
+  geom_text(
+    data = fairness_black_n,
+    aes(x=factor(IDEO_clean),
+        y=1.05,
+        label=paste0("N=",n)),
+    inherit.aes=FALSE,
+    size=3
+  ) +
+
+  facet_wrap(~race_group) +
+
+  scale_y_continuous(
+    labels=scales::percent_format(),
+    limits=c(0,1.1)
+  ) +
+
+  scale_x_discrete(
+    labels=c(
+      "Extremely Liberal",
+      "Liberal",
+      "Slightly Liberal",
+      "Moderate",
+      "Slightly Conservative",
+      "Conservative",
+      "Extremely Conservative"
+    )
+  ) +
+
+  scale_fill_manual(
+    values=c(
+      "Equal treatment"="gray70",
+      "Whites advantaged"="steelblue"
+    )
+  ) +
+
+  labs(
+    title="Weighted Beliefs About Voting Fairness by Ideology\n(White vs Black Question)",
+    x="Ideology",
+    y="Percent",
+    fill="Response"
+  ) +
+
+  theme_minimal(base_size=13) +
+  theme(axis.text.x = element_text(angle=35,hjust=1))
+
+
+
+
+
+library(dplyr)
+
+n_black_fairness <- issue %>%
+  filter(
+    ppethm %in% c(1,2,4),
+    !is.na(fairness_black_binary),
+    !is.na(IDEO_clean)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    )
+  ) %>%
+  group_by(race_group, IDEO_clean) %>%
+  summarise(
+    N = n(),
+    .groups = "drop"
+  )
+
+n_black_fairness
+
+
+library(dplyr)
+library(ggplot2)
+
+count_plot <- issue %>%
+  filter(
+    ppethm %in% c(1,2,4),
+    !is.na(IDEO_clean)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    ),
+    ideology_label = factor(
+      IDEO_clean,
+      levels = 1:7,
+      labels = c(
+        "Extremely Liberal",
+        "Liberal",
+        "Slightly Liberal",
+        "Moderate",
+        "Slightly Conservative",
+        "Conservative",
+        "Extremely Conservative"
+      )
+    )
+  )
+
+ggplot(count_plot,
+       aes(x = ideology_label)) +
+
+  geom_bar(fill = "steelblue") +
+
+  facet_wrap(~race_group) +
+
+  labs(
+    title = "Number of Respondents by Ideology and Race",
+    x = "Ideology",
+    y = "Count"
+  ) +
+
+  theme_minimal(base_size = 13) +
+
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1)
+  )
+
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+
+count_plot <- issue %>%
+  filter(
+    ppethm %in% c(1,2,4),
+    !is.na(IDEO_clean)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White respondents",
+      ppethm == 2 ~ "Black respondents",
+      ppethm == 4 ~ "Hispanic respondents"
+    ),
+    ideology_label = factor(
+      IDEO_clean,
+      levels = 1:7,
+      labels = c(
+        "Extremely Liberal",
+        "Liberal",
+        "Slightly Liberal",
+        "Moderate",
+        "Slightly Conservative",
+        "Conservative",
+        "Extremely Conservative"
+      )
+    )
+  )
+
+ggplot(count_plot,
+       aes(x = ideology_label)) +
+
+  geom_bar(fill = "steelblue") +
+
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count)),
+    vjust = -0.4,
+    size = 4
+  ) +
+
+  facet_wrap(~race_group) +
+
+  labs(
+    title = "Number of Respondents by Ideology and Race",
+    x = "Ideology",
+    y = "Count"
+  ) +
+
+  theme_minimal(base_size = 13) +
+
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1)
+  )
+
+
+
+```
+
+
+
+
+
+
+```{r conservative suppression}
+
+
+library(dplyr)
+
+cons_subset <- issue %>%
+  filter(
+    IDEO_clean %in% c(6,7),
+    !is.na(fairness_black_binary),
+    !is.na(suppression_perception_rev)
+  )
+
+
+
+
+
+table(cons_subset$IDEO_clean)
+
+
+
+model_cons_suppression_w <- lm(
+  suppression_perception_rev ~ fairness_black_binary,
+  data = cons_subset,
+  weights = WEIGHT
+)
+
+summary(model_cons_suppression_w)
+
+#people who think white people are advantaged are more likely to have easier time voting think there is more suppresstion?
+
+
+
+extreme_cons_subset <- issue %>%
+  filter(
+    IDEO_clean == 7,
+    !is.na(fairness_black_binary),
+    !is.na(suppression_perception_rev),
+    !is.na(WEIGHT)
+  )
+
+nrow(extreme_cons_subset)
+
+
+model_extreme_cons_suppression_w <- lm(
+  suppression_perception_rev ~ fairness_black_binary,
+  data = extreme_cons_subset,
+  weights = WEIGHT
+)
+
+summary(model_extreme_cons_suppression_w)
+
+
+
+
+library(dplyr)
+
+cons_plot <- issue %>%
+  filter(
+    IDEO_clean %in% c(5,6,7),
+    !is.na(WEIGHT)
+  ) %>%
+  mutate(
+    ideology_label = factor(
+      IDEO_clean,
+      levels = c(5,6,7),
+      labels = c(
+        "Slightly Conservative",
+        "Conservative",
+        "Extremely Conservative"
+      )
+    )
+  )
+
+
+cons_black <- cons_plot %>%
+  filter(!is.na(vote_fair_white_black)) %>%
+  mutate(
+    fairness_black_label = factor(
+      vote_fair_white_black,
+      levels = c(1,2,3),
+      labels = c(
+        "Easier for Whites",
+        "Easier for Blacks",
+        "Equal treatment"
+      )
+    )
+  ) %>%
+  group_by(ideology_label, fairness_black_label) %>%
+  summarise(
+    wt = sum(WEIGHT),
+    .groups = "drop"
+  ) %>%
+  group_by(ideology_label) %>%
+  mutate(percent = wt/sum(wt))
+
+library(ggplot2)
+
+ggplot(cons_black,
+       aes(x = ideology_label,
+           y = percent,
+           fill = fairness_black_label)) +
+
+  geom_col() +
+
+  scale_y_continuous(labels = scales::percent_format()) +
+
+  scale_fill_manual(
+    values = c(
+      "Easier for Whites" = "steelblue",
+      "Easier for Blacks" = "firebrick",
+      "Equal treatment" = "gray70"
+    )
+  ) +
+
+  labs(
+    title = "Conservative Respondents: Who Has an Easier Time Voting?\n(White vs Black)",
+    x = "Ideology",
+    y = "Percent",
+    fill = "Response"
+  ) +
+
+  theme_minimal(base_size = 13)
+
+
+
+cons_hisp <- cons_plot %>%
+  filter(!is.na(vote_fair_white_hispanic)) %>%
+  mutate(
+    fairness_hisp_label = factor(
+      vote_fair_white_hispanic,
+      levels = c(1,2,3),
+      labels = c(
+        "Easier for Whites",
+        "Easier for Hispanics",
+        "Equal treatment"
+      )
+    )
+  ) %>%
+  group_by(ideology_label, fairness_hisp_label) %>%
+  summarise(
+    wt = sum(WEIGHT),
+    .groups = "drop"
+  ) %>%
+  group_by(ideology_label) %>%
+  mutate(percent = wt/sum(wt))
+
+ggplot(cons_hisp,
+       aes(x = ideology_label,
+           y = percent,
+           fill = fairness_hisp_label)) +
+
+  geom_col() +
+
+  scale_y_continuous(labels = scales::percent_format()) +
+
+  scale_fill_manual(
+    values = c(
+      "Easier for Whites" = "steelblue",
+      "Easier for Hispanics" = "darkorange",
+      "Equal treatment" = "gray70"
+    )
+  ) +
+
+  labs(
+    title = "Conservative Respondents: Who Has an Easier Time Voting?\n(White vs Hispanic)",
+    x = "Ideology",
+    y = "Percent",
+    fill = "Response"
+  ) +
+
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(dplyr)
+library(MASS)
+
+issue <- issue %>%
+  mutate(
+    fairness_black_factor = case_when(
+      vote_fair_white_black == 1 ~ "Whites advantaged",
+      vote_fair_white_black == 2 ~ "Blacks advantaged",
+      vote_fair_white_black == 3 ~ "Equal treatment",
+      TRUE ~ NA_character_
+    ),
+    fairness_hisp_factor = case_when(
+      vote_fair_white_hispanic == 1 ~ "Whites advantaged",
+      vote_fair_white_hispanic == 2 ~ "Hispanics advantaged",
+      vote_fair_white_hispanic == 3 ~ "Equal treatment",
+      TRUE ~ NA_character_
+    )
+  )
+
+issue$fairness_black_factor <- factor(
+  issue$fairness_black_factor,
+  levels = c("Equal treatment", "Whites advantaged", "Blacks advantaged")
+)
+
+issue$fairness_hisp_factor <- factor(
+  issue$fairness_hisp_factor,
+  levels = c("Equal treatment", "Whites advantaged", "Hispanics advantaged")
+)
+
+
+cons_general <- issue %>%
+  filter(
+    IDEO_clean %in% c(5, 6, 7),
+    !is.na(suppression_perception_rev),
+    !is.na(WEIGHT)
+  )
+
+extreme_cons <- issue %>%
+  filter(
+    IDEO_clean == 7,
+    !is.na(suppression_perception_rev),
+    !is.na(WEIGHT)
+  )
+
+
+model_cons_black <- lm(
+  suppression_perception_rev ~ fairness_black_factor,
+  data = cons_general,
+  weights = WEIGHT
+)
+
+summary(model_cons_black)
+#in conservative those who think whites are advantaged over blacks are more likely to think there is more suppression
+
+
+model_extreme_black <- lm(
+  suppression_perception_rev ~ fairness_black_factor,
+  data = extreme_cons,
+  weights = WEIGHT
+)
+
+summary(model_extreme_black)
+#even in extereme conservative people who think whites are advantaged are more likely to think there is more suppression
+
+
+
+model_cons_hisp <- lm(
+  suppression_perception_rev ~ fairness_hisp_factor,
+  data = cons_general,
+  weights = WEIGHT
+)
+
+summary(model_cons_hisp)
+#in general conservatism people who think white people are advantaged think there is more suppression
+
+
+
+model_extreme_hisp <- lm(
+  suppression_perception_rev ~ fairness_hisp_factor,
+  data = extreme_cons,
+  weights = WEIGHT
+)
+
+summary(model_extreme_hisp)
+#nothing significant
+
+
+
+library(ggplot2)
+library(stringr)
+
+pred_all <- pred_all %>%
+  dplyr::mutate(
+    institution = stringr::str_wrap(institution, width = 18)
+  )
+
+ggplot(pred_all,
+       aes(x = x, y = fit, color = type, group = type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.08) +
+  facet_wrap(~institution) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  scale_y_continuous(
+    limits = c(1, 4),
+    breaks = c(1, 2, 3, 4),
+    labels = c("Not at all", "Not too much", "A good amount", "A great deal"),
+    expand = expansion(mult = c(0.02, 0.05))
+  ) +
+  labs(
+    title = "Trust in Institutions by Perceived Fraud and Suppression",
+    subtitle = "Weighted regression predictions with 95% confidence intervals",
+    x = "Perceived Frequency",
+    y = "Trust",
+    color = "Threat Type"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    axis.text.y = element_text(size = 9),
+    strip.text = element_text(size = 10, lineheight = 1.1),
+    panel.spacing = unit(1.2, "lines"),
+    plot.margin = margin(12, 18, 12, 18)
+  )
+
+
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(stringr)
+
+trust_long <- issue %>%
+  dplyr::filter(
+    !is.na(WEIGHT),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  ) %>%
+  dplyr::select(
+    WEIGHT,
+    suppression_perception_rev,
+    fraud_perception_rev,
+    trust_legislature,
+    trust_president,
+    trust_congress,
+    trust_state_elections,
+    trust_local_elections
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(
+      trust_legislature,
+      trust_president,
+      trust_congress,
+      trust_state_elections,
+      trust_local_elections
+    ),
+    names_to = "institution",
+    values_to = "trust"
+  ) %>%
+  dplyr::filter(!is.na(trust))
+
+models_supp <- trust_long %>%
+  split(.$institution) %>%
+  map(~ lm(
+    trust ~ suppression_perception_rev,
+    data = .x,
+    weights = WEIGHT
+  ))
+
+models_fraud <- trust_long %>%
+  split(.$institution) %>%
+  map(~ lm(
+    trust ~ fraud_perception_rev,
+    data = .x,
+    weights = WEIGHT
+  ))
+
+pred_supp <- map_df(names(models_supp), function(inst) {
+  mod <- models_supp[[inst]]
+  p <- predict(
+    mod,
+    newdata = data.frame(suppression_perception_rev = 1:4),
+    se.fit = TRUE
+  )
+
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    type = "Suppression"
+  )
+})
+
+pred_fraud <- map_df(names(models_fraud), function(inst) {
+  mod <- models_fraud[[inst]]
+  p <- predict(
+    mod,
+    newdata = data.frame(fraud_perception_rev = 1:4),
+    se.fit = TRUE
+  )
+
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    type = "Fraud"
+  )
+})
+
+pred_all <- bind_rows(pred_supp, pred_fraud) %>%
+  mutate(
+    institution = recode(
+      institution,
+      trust_legislature = "State Legislature",
+      trust_president = "President",
+      trust_congress = "Congress",
+      trust_state_elections = "State Election Officials",
+      trust_local_elections = "Local Election Officials"
+    ),
+    institution = stringr::str_wrap(institution, width = 22)
+  )
+
+ggplot(pred_all, aes(x = x, y = fit, color = type, group = type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.08, linewidth = 0.8) +
+  facet_wrap(~institution) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  scale_y_continuous(
+    breaks = c(1, 2, 3, 4),
+    labels = c("Not at all", "Not too much", "A good amount", "A great deal"),
+    expand = expansion(mult = c(0.02, 0.05))
+  ) +
+  labs(
+    title = "Trust in Institutions by Perceived Fraud and Suppression",
+    subtitle = "Weighted regression predictions with 95% confidence intervals",
+    x = "Perceived Frequency",
+    y = "Trust",
+    color = "Threat Type"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    axis.text.y = element_text(size = 9),
+    strip.text = element_text(size = 10, lineheight = 1.1),
+    panel.spacing = unit(0.9, "lines"),
+    plot.margin = margin(10, 16, 10, 16)
+  )
+
+
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(stringr)
+
+trust_long <- issue %>%
+  dplyr::filter(
+    !is.na(WEIGHT),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  ) %>%
+  dplyr::select(
+    WEIGHT,
+    suppression_perception_rev,
+    fraud_perception_rev,
+    trust_legislature,
+    trust_president,
+    trust_congress,
+    trust_state_elections,
+    trust_local_elections
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(
+      trust_legislature,
+      trust_president,
+      trust_congress,
+      trust_state_elections,
+      trust_local_elections
+    ),
+    names_to = "institution",
+    values_to = "trust"
+  ) %>%
+  dplyr::filter(!is.na(trust))
+
+models_supp <- trust_long %>%
+  split(.$institution) %>%
+  map(~ lm(
+    trust ~ suppression_perception_rev,
+    data = .x,
+    weights = WEIGHT
+  ))
+
+models_fraud <- trust_long %>%
+  split(.$institution) %>%
+  map(~ lm(
+    trust ~ fraud_perception_rev,
+    data = .x,
+    weights = WEIGHT
+  ))
+
+pred_supp <- map_df(names(models_supp), function(inst) {
+  mod <- models_supp[[inst]]
+  p <- predict(
+    mod,
+    newdata = data.frame(suppression_perception_rev = 1:4),
+    se.fit = TRUE
+  )
+
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    type = "Suppression"
+  )
+})
+
+pred_fraud <- map_df(names(models_fraud), function(inst) {
+  mod <- models_fraud[[inst]]
+  p <- predict(
+    mod,
+    newdata = data.frame(fraud_perception_rev = 1:4),
+    se.fit = TRUE
+  )
+
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    type = "Fraud"
+  )
+})
+
+pred_all <- bind_rows(pred_supp, pred_fraud) %>%
+  mutate(
+    institution = recode(
+      institution,
+      trust_legislature = "State Legislature",
+      trust_president = "President",
+      trust_congress = "Congress",
+      trust_state_elections = "State Election Officials",
+      trust_local_elections = "Local Election Officials"
+    ),
+    institution = stringr::str_wrap(institution, width = 24),
+    x_plot = ifelse(type == "Suppression", x - 0.08, x + 0.08)
+  )
+
+ggplot(pred_all, aes(x = x_plot, y = fit, color = type, group = type)) +
+  geom_line(linewidth = 1.2) +
+  geom_pointrange(aes(ymin = lower, ymax = upper), linewidth = 0.9, size = 0.5) +
+  facet_wrap(~institution, nrow = 1) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  scale_y_continuous(
+    breaks = c(1, 2, 3, 4),
+    labels = c("Not at all", "Not too much", "A good amount", "A great deal")
+  ) +
+  labs(
+    title = "Trust in Institutions by Perceived Fraud and Suppression",
+    subtitle = "Weighted regression predictions with 95% confidence intervals",
+    x = "Perceived Frequency",
+    y = "Trust",
+    color = "Threat Type"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    strip.text = element_text(size = 10, lineheight = 1.1),
+    panel.spacing = unit(1.1, "lines"),
+    plot.margin = margin(10, 20, 10, 20)
+  )
+
+
+
+```
+
+
+
+
+
+```{r racial fairness in voting trust}
+
+
+model_vote_black <- lm(
+  conf_own_vote_rev ~ fairness_black_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_vote_black)
+#not significant
+
+
+model_vote_hisp <- lm(
+  conf_own_vote_rev ~ fairness_hisp_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_vote_hisp)
+#not significant
+
+
+
+
+model_state_black <- lm(
+  conf_state_rev ~ fairness_black_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_state_black)
+#believing that white people have an advantage has a slightly significant relationship with believing the state will count accurately
+
+model_state_hisp <- lm(
+  conf_state_rev ~ fairness_hisp_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_state_hisp)
+#hispanic not significance
+
+
+model_national_black <- lm(
+  conf_national_rev ~ fairness_black_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_national_black)
+#not significant
+
+
+
+model_national_hisp <- lm(
+  conf_national_rev ~ fairness_hisp_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_national_hisp)
+#hispanic not significant
+
+
+
+model_mail_black <- lm(
+  conf_mail_rev ~ fairness_black_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_mail_black)
+#people who think white people are more priviledged in voting have more confidence in mail
+
+
+model_mail_hisp <- lm(
+  conf_mail_rev ~ fairness_hisp_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_mail_hisp)
+#support for mail significantly associated with white support
+
+
+
+
+model_elecday_black <- lm(
+  conf_inperson_elecday_rev ~ fairness_black_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_elecday_black)
+#not significant
+
+
+model_elecday_hisp <- lm(
+  conf_inperson_elecday_rev ~ fairness_hisp_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_elecday_hisp)
+#not significant
+
+
+model_early_black <- lm(
+  conf_inperson_early_rev ~ fairness_black_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_early_black)
+#insignificant
+
+
+model_early_hisp <- lm(
+  conf_inperson_early_rev ~ fairness_hisp_binary + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_early_hisp)
+#insignificant
+
+```
+
+
+
+
+
+
+```{r usps and race}
+
+
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    usps_eval_clean = na_if(usps_job_clean, -1),
+    
+    usps_eval_factor = factor(
+      usps_eval_clean,
+      levels = 1:4,
+      labels = c(
+        "Excellent",
+        "Good",
+        "Only Fair",
+        "Poor"
+      )
+    )
+  )
+
+
+library(dplyr)
+library(tidyr)
+
+race_long <- issue %>%
+  dplyr::select(usps_eval_factor, WEIGHT, white, black, hispanic) %>%
+  filter(!is.na(usps_eval_factor)) %>%   # remove NA evaluation values
+  pivot_longer(
+    cols = c(white, black, hispanic),
+    names_to = "race",
+    values_to = "member"
+  ) %>%
+  filter(member == 1) %>%                # keep only race members
+  droplevels()                           # drop unused factor levels
+
+
+race_eval_pct <- race_long %>%
+  group_by(race, usps_eval_factor) %>%
+  summarise(
+    weighted_n = sum(WEIGHT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(race) %>%
+  mutate(
+    pct = weighted_n / sum(weighted_n)
+  )
+
+library(ggplot2)
+
+ggplot(
+  race_eval_pct %>% filter(!is.na(usps_eval_factor)),
+  aes(x = usps_eval_factor,
+      y = pct,
+      color = race,
+      group = race)
+) +
+  
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  
+  scale_x_discrete(drop = TRUE) +   # removes NA level
+  
+  scale_y_continuous(
+    labels = scales::percent_format(),
+    limits = c(0,1)
+  ) +
+  
+  scale_color_manual(
+    values = c(
+      white = "black",
+      black = "steelblue",
+      hispanic = "darkorange"
+    ),
+    labels = c(
+      white = "White",
+      black = "Black",
+      hispanic = "Hispanic"
+    )
+  ) +
+  
+  labs(
+    title = "Mean Evaluation of the U.S. Postal Service by Race",
+    x = "Evaluation of USPS",
+    y = "Percent of Respondents",
+    color = "Race"
+  ) +
+  
+  theme_minimal(base_size = 13)
+
+
+
+
+issue <- issue %>%
+  mutate(
+    usps_eval_clean = na_if(usps_job_clean, -1)
+  )
+
+
+
+model_usps_race <- lm(
+  usps_eval_clean ~ black + hispanic,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_usps_race)
+
+
+model_usps_all <- lm(
+  usps_eval_clean ~ race,
+  data = issue,
+  weights = WEIGHT
+)
+summary(model_usps_all)
+
+
+model_usps_race <- lm(
+  usps_eval_clean ~ black + hispanic,
+  data = issue,
+  weights = WEIGHT
+)
+
+
+
+model_usps_race <- lm(
+  usps_eval_clean ~ black + hispanic,
+  data = issue,
+  weights = WEIGHT
+)
+
+pred_data <- data.frame(
+  black = c(0, 1, 0),
+  hispanic = c(0, 0, 1)
+)
+
+pred_data$race <- c("White", "Black", "Hispanic")
+
+
+pred_out <- predict(
+  model_usps_race,
+  newdata = pred_data,
+  se.fit = TRUE
+)
+
+pred_data$fit <- pred_out$fit
+pred_data$se <- pred_out$se.fit
+
+pred_data$lower <- pred_data$fit - 1.96 * pred_data$se
+pred_data$upper <- pred_data$fit + 1.96 * pred_data$se
+
+
+library(ggplot2)
+
+ggplot(pred_data, aes(x = race, y = fit, color = race)) +
+  
+  geom_point(size = 4) +
+  
+  geom_errorbar(
+    aes(ymin = lower, ymax = upper),
+    width = .15,
+    linewidth = 1
+  ) +
+  
+  scale_color_manual(
+    values = c(
+      "White" = "black",
+      "Black" = "steelblue",
+      "Hispanic" = "darkorange"
+    )
+  ) +
+  
+  scale_y_continuous(
+    limits = c(1,4),
+    breaks = 1:4,
+    labels = c(
+      "Poor",
+      "Only Fair",
+      "Good",
+      "Excellent"
+    )
+  ) +
+  
+  labs(
+    title = "Predicted USPS Evaluation by Race",
+    x = "Race",
+    y = "Predicted USPS Evaluation"
+  ) +
+  
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+
+
+
+
+library(broom)
+library(ggplot2)
+
+coef_data <- broom::tidy(model_usps_race, conf.int = TRUE)
+
+coef_data <- coef_data %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    race = case_when(
+      term == "black" ~ "Black vs White",
+      term == "hispanic" ~ "Hispanic vs White"
+    )
+  )
+
+ggplot(coef_data, aes(x = estimate, y = race)) +
+  
+  geom_point(size = 4) +
+  
+  geom_errorbarh(
+    aes(xmin = conf.low, xmax = conf.high),
+    height = .2,
+    linewidth = 1
+  ) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  
+  labs(
+    title = "Difference in USPS Evaluation by Race",
+    x = "Difference from White Respondents",
+    y = ""
+  ) +
+  
+  theme_minimal(base_size = 13)
+
+
+
+
+```
+
+
+
+
+
+```{r usps vbm and race}
+
+library(dplyr)
+library(ggplot2)
+
+issue_race_graph <- issue %>%
+  filter(
+    ppethm %in% c(1, 2, 4),          # White, Black, Hispanic only
+    !is.na(mail_pref),
+    !is.na(usps_job_clean),
+    !is.na(WEIGHT)
+  ) %>%
+  mutate(
+    race_group = case_when(
+      ppethm == 1 ~ "White",
+      ppethm == 2 ~ "Black",
+      ppethm == 4 ~ "Hispanic"
+    ),
+    race_group = factor(race_group, levels = c("White", "Black", "Hispanic")),
+    usps_eval_clean = as.numeric(usps_job_clean)
+  )
+
+
+
+model_vbm_usps_race <- glm(
+  mail_pref ~ usps_eval_clean * race_group,
+  family = binomial,
+  data = issue_race_graph,
+  weights = WEIGHT
+)
+
+summary(model_vbm_usps_race)
+
+
+
+pred_data <- expand.grid(
+  usps_eval_clean = 1:4,
+  race_group = c("White", "Black", "Hispanic")
+)
+
+
+
+
+pred_out <- predict(
+  model_vbm_usps_race,
+  newdata = pred_data,
+  type = "link",
+  se.fit = TRUE
+)
+
+pred_data$fit_link <- pred_out$fit
+pred_data$se_link <- pred_out$se.fit
+
+pred_data$fit <- plogis(pred_data$fit_link)
+pred_data$lower <- plogis(pred_data$fit_link - 1.96 * pred_data$se_link)
+pred_data$upper <- plogis(pred_data$fit_link + 1.96 * pred_data$se_link)
+
+
+
+ggplot(pred_data,
+       aes(x = usps_eval_clean,
+           y = fit,
+           color = race_group,
+           fill = race_group,
+           group = race_group)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              alpha = 0.15,
+              color = NA) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Excellent", "Good", "Only fair", "Poor")
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  scale_color_manual(
+    values = c(
+      "White" = "black",
+      "Black" = "steelblue",
+      "Hispanic" = "darkorange"
+    )
+  ) +
+  scale_fill_manual(
+    values = c(
+      "White" = "black",
+      "Black" = "steelblue",
+      "Hispanic" = "darkorange"
+    )
+  ) +
+  labs(
+    title = "Preference for Vote by Mail by USPS Evaluation and Race/Ethnicity",
+    x = "Evaluation of USPS Job Performance",
+    y = "Predicted Probability of Preferring Vote by Mail",
+    color = "Race/Ethnicity",
+    fill = "Race/Ethnicity"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 25, hjust = 1)
+  )
+
+
+
+```
+
+White people on black v white
+Call:
+glm(formula = fairness_black_binary ~ dem + IDEO_clean, family = binomial, 
+    data = white_data)
+
+Coefficients:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  2.20875    0.49241   4.486 7.27e-06 ***
+dem          1.79759    0.25358   7.089 1.35e-12 ***
+IDEO_clean  -0.96196    0.09991  -9.629  < 2e-16 ***
+
+
+Black on black v white
+Call:
+glm(formula = fairness_black_binary ~ dem + IDEO_clean, family = binomial, 
+    data = black_data)
+
+Coefficients:
+            Estimate Std. Error z value Pr(>|z|)  
+(Intercept) -0.37010    1.09115  -0.339   0.7345  
+dem          1.55044    0.72634   2.135   0.0328 *
+IDEO_clean   0.07711    0.18520   0.416   0.6772  
+---
+
+
+Hispanic on hispanic v white
+
+Call:
+glm(formula = fairness_hisp_binary ~ dem + IDEO_clean, family = binomial, 
+    data = hispanic_data)
+
+Coefficients:
+            Estimate Std. Error z value Pr(>|z|)   
+(Intercept)   0.9112     1.3406   0.680   0.4967   
+dem           1.5934     0.8571   1.859   0.0630 . 
+IDEO_clean   -0.6479     0.2292  -2.827   0.0047 **
+---
+
+
+
+```{r conservatives and racial fairness}
+
+
+
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    fairness_black_binary2 = case_when(
+      vote_fair_white_black == 1 ~ 1,                    # Whites advantaged
+      vote_fair_white_black %in% c(2, 3) ~ 0,           # Blacks advantaged OR equal treatment
+      vote_fair_white_black %in% c(-1) ~ NA_real_,
+      TRUE ~ NA_real_
+    ),
+    
+    fairness_hisp_binary2 = case_when(
+      vote_fair_white_hispanic == 1 ~ 1,                # Whites advantaged
+      vote_fair_white_hispanic %in% c(2, 3) ~ 0,        # Hispanics advantaged OR equal treatment
+      vote_fair_white_hispanic %in% c(-1) ~ NA_real_,
+      TRUE ~ NA_real_
+    )
+  )
+
+table(issue$fairness_black_binary2, useNA = "ifany")
+table(issue$fairness_hisp_binary2, useNA = "ifany")
+
+
+
+cons_subset <- issue %>%
+  filter(
+    IDEO_clean %in% c(6, 7),
+    !is.na(suppression_perception_rev),
+    !is.na(WEIGHT)
+  )
+
+extreme_cons_subset <- issue %>%
+  filter(
+    IDEO_clean == 7,
+    !is.na(suppression_perception_rev),
+    !is.na(WEIGHT)
+  )
+
+
+model_cons_black_fairness_w <- glm(
+  fairness_black_binary2 ~ suppression_perception_rev,
+  data = cons_subset,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_cons_black_fairness_w)
+
+#still positive suppression is correlated with white advantage
+
+
+
+model_extreme_black_fairness_w <- glm(
+  fairness_black_binary2 ~ suppression_perception_rev,
+  data = extreme_cons_subset,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_extreme_black_fairness_w)
+#still positive more suppression belief is higher belief that white people have an easier time kind of significant
+
+
+
+model_cons_hisp_fairness_w <- glm(
+  fairness_hisp_binary2 ~ suppression_perception_rev,
+  data = cons_subset,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_cons_hisp_fairness_w)
+#positive more suppression belief is higher belief that white people have an easier time kind of significant
+
+
+model_extreme_hisp_fairness_w <- glm(
+  fairness_hisp_binary2 ~ suppression_perception_rev,
+  data = extreme_cons_subset,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_extreme_hisp_fairness_w)
+#still positive
+
+```
+
+
+
+```{r suppression/fraud and trust in institutions}
+trust_data <- issue %>%
+  filter(
+    !is.na(WEIGHT),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  )
+
+
+model_supp_leg <- lm(
+  trust_legislature ~ suppression_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_supp_pres <- lm(
+  trust_president ~ suppression_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_supp_cong <- lm(
+  trust_congress ~ suppression_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_supp_state <- lm(
+  trust_state_elections ~ suppression_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_supp_local <- lm(
+  trust_local_elections ~ suppression_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+
+
+summary(model_supp_leg)
+#less suppression more trust on leg
+summary(model_supp_pres)
+#less suppress more trust in president
+summary(model_supp_cong)
+#less suppress more trust in congress
+summary(model_supp_state)
+#less suppress more trust in state
+summary(model_supp_local)
+#less suppress more trust in local
+
+
+
+model_fraud_leg <- lm(
+  trust_legislature ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_fraud_pres <- lm(
+  trust_president ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_fraud_cong <- lm(
+  trust_congress ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_fraud_state <- lm(
+  trust_state_elections ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_fraud_local <- lm(
+  trust_local_elections ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+
+library(modelsummary)
+
+modelsummary(
+  list(
+    "Suppression → Legislature" = model_supp_leg,
+    "Suppression → President" = model_supp_pres,
+    "Suppression → Congress" = model_supp_cong,
+    "Suppression → State Elections" = model_supp_state,
+    "Suppression → Local Elections" = model_supp_local,
+    
+    "Fraud → Legislature" = model_fraud_leg,
+    "Fraud → President" = model_fraud_pres,
+    "Fraud → Congress" = model_fraud_cong,
+    "Fraud → State Elections" = model_fraud_state,
+    "Fraud → Local Elections" = model_fraud_local
+  )
+)
+
+
+
+
+summary(issue$fraud_perception_rev)
+table(issue$fraud_perception_rev, useNA = "ifany")
+
+
+trust_data <- issue %>%
+  filter(
+    !is.na(WEIGHT),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  )
+
+
+nrow(trust_data)
+
+model_fraud_leg <- lm(
+  trust_legislature ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_fraud_pres <- lm(
+  trust_president ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_fraud_cong <- lm(
+  trust_congress ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_fraud_state <- lm(
+  trust_state_elections ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+model_fraud_local <- lm(
+  trust_local_elections ~ fraud_perception_rev,
+  data = trust_data,
+  weights = WEIGHT
+)
+
+
+summary(model_fraud_leg)
+#higher fraud lower trust in leg
+summary(model_fraud_pres)
+#higher fraud higher trust in pres
+summary(model_fraud_cong)
+#higher fraud lower trust in cong
+summary(model_fraud_state)
+#higher fraud lower trust in state
+summary(model_fraud_local)
+#higher fraud lower trust in local
+
+
+
+
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+plot_state <- issue %>%
+  filter(
+    !is.na(WEIGHT),
+    !is.na(trust_state_elections),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  ) %>%
+  group_by(suppression_perception_rev) %>%
+  summarise(
+    trust = weighted.mean(trust_state_elections, WEIGHT, na.rm = TRUE),
+    type = "Suppression",
+    .groups = "drop"
+  ) %>%
+  rename(x = suppression_perception_rev) %>%
+  bind_rows(
+    issue %>%
+      filter(
+        !is.na(WEIGHT),
+        !is.na(trust_state_elections),
+        !is.na(fraud_perception_rev)
+      ) %>%
+      group_by(fraud_perception_rev) %>%
+      summarise(
+        trust = weighted.mean(trust_state_elections, WEIGHT, na.rm = TRUE),
+        type = "Fraud",
+        .groups = "drop"
+      ) %>%
+      rename(x = fraud_perception_rev)
+  )
+
+ggplot(plot_state, aes(x = x, y = trust, color = type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  scale_y_continuous(
+    limits = c(1, 4),
+    breaks = 1:4,
+    labels = c("Not at all", "Not too much", "A good amount", "A great deal")
+  ) +
+  labs(
+    title = "Trust in State Election Officials by Perceived Election Threat",
+    x = "Perceived Frequency",
+    y = "Trust",
+    color = "Threat Type"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+trust_long <- issue %>%
+  dplyr::filter(
+    !is.na(WEIGHT),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  ) %>%
+  dplyr::select(
+    WEIGHT,
+    suppression_perception_rev,
+    fraud_perception_rev,
+    trust_legislature,
+    trust_president,
+    trust_congress,
+    trust_state_elections,
+    trust_local_elections
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(
+      trust_legislature,
+      trust_president,
+      trust_congress,
+      trust_state_elections,
+      trust_local_elections
+    ),
+    names_to = "institution",
+    values_to = "trust"
+  ) %>%
+  dplyr::filter(!is.na(trust))
+
+
+
+supp_plot <- trust_long %>%
+  group_by(institution, x = suppression_perception_rev) %>%
+  summarise(
+    trust = weighted.mean(trust, WEIGHT, na.rm = TRUE),
+    type = "Suppression",
+    .groups = "drop"
+  )
+
+fraud_plot <- trust_long %>%
+  group_by(institution, x = fraud_perception_rev) %>%
+  summarise(
+    trust = weighted.mean(trust, WEIGHT, na.rm = TRUE),
+    type = "Fraud",
+    .groups = "drop"
+  )
+
+plot_data <- bind_rows(supp_plot, fraud_plot) %>%
+  mutate(
+    institution = recode(
+      institution,
+      trust_legislature = "State Legislature",
+      trust_president = "President",
+      trust_congress = "Congress",
+      trust_state_elections = "State Election Officials",
+      trust_local_elections = "Local Election Officials"
+    )
+  )
+
+ggplot(plot_data, aes(x = x, y = trust, color = type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  facet_wrap(~institution) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  scale_y_continuous(
+    limits = c(1, 4),
+    breaks = 1:4,
+    labels = c("Not at all", "Not too much", "A good amount", "A great deal")
+  ) +
+  labs(
+    title = "Mean Trust in Institutions by Perceived Fraud and Suppression",
+    x = "Perceived Frequency",
+    y = "Trust",
+    color = "Threat Type"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+
+
+
+
+
+
+
+
+
+library(dplyr)
+library(tidyr)
+
+trust_long <- issue %>%
+  dplyr::filter(
+    !is.na(WEIGHT),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  ) %>%
+  dplyr::select(
+    WEIGHT,
+    suppression_perception_rev,
+    fraud_perception_rev,
+    trust_legislature,
+    trust_president,
+    trust_congress,
+    trust_state_elections,
+    trust_local_elections
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(
+      trust_legislature,
+      trust_president,
+      trust_congress,
+      trust_state_elections,
+      trust_local_elections
+    ),
+    names_to = "institution",
+    values_to = "trust"
+  ) %>%
+  dplyr::filter(!is.na(trust))
+
+
+pred_x <- data.frame(x = 1:4)
+
+pred_supp <- map_df(names(models_supp), function(inst) {
+  
+  mod <- models_supp[[inst]]
+  
+  p <- predict(mod,
+               newdata = data.frame(suppression_perception_rev = 1:4),
+               se.fit = TRUE)
+  
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = p$fit,
+    lower = p$fit - 1.96 * p$se.fit,
+    upper = p$fit + 1.96 * p$se.fit,
+    type = "Suppression"
+  )
+})
+
+pred_fraud <- map_df(names(models_fraud), function(inst) {
+  
+  mod <- models_fraud[[inst]]
+  
+  p <- predict(mod,
+               newdata = data.frame(fraud_perception_rev = 1:4),
+               se.fit = TRUE)
+  
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = p$fit,
+    lower = p$fit - 1.96 * p$se.fit,
+    upper = p$fit + 1.96 * p$se.fit,
+    type = "Fraud"
+  )
+})
+
+pred_all <- bind_rows(pred_supp, pred_fraud)
+
+
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+trust_long <- issue %>%
+  dplyr::filter(
+    !is.na(WEIGHT),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  ) %>%
+  dplyr::select(
+    WEIGHT,
+    suppression_perception_rev,
+    fraud_perception_rev,
+    trust_legislature,
+    trust_president,
+    trust_congress,
+    trust_state_elections,
+    trust_local_elections
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(
+      trust_legislature,
+      trust_president,
+      trust_congress,
+      trust_state_elections,
+      trust_local_elections
+    ),
+    names_to = "institution",
+    values_to = "trust"
+  ) %>%
+  dplyr::filter(!is.na(trust))
+
+models_supp <- trust_long %>%
+  split(.$institution) %>%
+  map(~ lm(
+    trust ~ suppression_perception_rev,
+    data = .x,
+    weights = WEIGHT
+  ))
+
+models_fraud <- trust_long %>%
+  split(.$institution) %>%
+  map(~ lm(
+    trust ~ fraud_perception_rev,
+    data = .x,
+    weights = WEIGHT
+  ))
+
+pred_supp <- map_df(names(models_supp), function(inst) {
+  mod <- models_supp[[inst]]
+  p <- predict(
+    mod,
+    newdata = data.frame(suppression_perception_rev = 1:4),
+    se.fit = TRUE
+  )
+
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    type = "Suppression"
+  )
+})
+
+pred_fraud <- map_df(names(models_fraud), function(inst) {
+  mod <- models_fraud[[inst]]
+  p <- predict(
+    mod,
+    newdata = data.frame(fraud_perception_rev = 1:4),
+    se.fit = TRUE
+  )
+
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    type = "Fraud"
+  )
+})
+
+pred_all <- bind_rows(pred_supp, pred_fraud) %>%
+  mutate(
+    institution = recode(
+      institution,
+      trust_legislature = "State Legislature",
+      trust_president = "President",
+      trust_congress = "Congress",
+      trust_state_elections = "State Election Officials",
+      trust_local_elections = "Local Election Officials"
+    )
+  )
+
+ggplot(pred_all,
+       aes(x = x, y = fit, color = type, fill = type, group = type)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.15, color = NA) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  facet_wrap(~institution) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  scale_y_continuous(
+    limits = c(1, 4),
+    breaks = 1:4,
+    labels = c("Not at all", "Not too much", "A good amount", "A great deal")
+  ) +
+  labs(
+    title = "Trust in Institutions by Perceived Fraud and Suppression",
+    subtitle = "Weighted regression predictions with 95% confidence intervals",
+    x = "Perceived Frequency",
+    y = "Trust",
+    color = "Threat Type",
+    fill = "Threat Type"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+trust_long <- issue %>%
+  dplyr::filter(
+    !is.na(WEIGHT),
+    !is.na(suppression_perception_rev),
+    !is.na(fraud_perception_rev)
+  ) %>%
+  dplyr::select(
+    WEIGHT,
+    suppression_perception_rev,
+    fraud_perception_rev,
+    trust_legislature,
+    trust_president,
+    trust_congress,
+    trust_state_elections,
+    trust_local_elections
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(
+      trust_legislature,
+      trust_president,
+      trust_congress,
+      trust_state_elections,
+      trust_local_elections
+    ),
+    names_to = "institution",
+    values_to = "trust"
+  ) %>%
+  dplyr::filter(!is.na(trust))
+
+models_supp <- trust_long %>%
+  split(.$institution) %>%
+  map(~ lm(
+    trust ~ suppression_perception_rev,
+    data = .x,
+    weights = WEIGHT
+  ))
+
+models_fraud <- trust_long %>%
+  split(.$institution) %>%
+  map(~ lm(
+    trust ~ fraud_perception_rev,
+    data = .x,
+    weights = WEIGHT
+  ))
+
+pred_supp <- map_df(names(models_supp), function(inst) {
+  mod <- models_supp[[inst]]
+  p <- predict(
+    mod,
+    newdata = data.frame(suppression_perception_rev = 1:4),
+    se.fit = TRUE
+  )
+
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    type = "Suppression"
+  )
+})
+
+pred_fraud <- map_df(names(models_fraud), function(inst) {
+  mod <- models_fraud[[inst]]
+  p <- predict(
+    mod,
+    newdata = data.frame(fraud_perception_rev = 1:4),
+    se.fit = TRUE
+  )
+
+  data.frame(
+    institution = inst,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    type = "Fraud"
+  )
+})
+
+pred_all <- bind_rows(pred_supp, pred_fraud) %>%
+  mutate(
+    institution = recode(
+      institution,
+      trust_legislature = "State Legislature",
+      trust_president = "President",
+      trust_congress = "Congress",
+      trust_state_elections = "State Election Officials",
+      trust_local_elections = "Local Election Officials"
+    )
+  )
+
+ggplot(pred_all,
+       aes(x = x, y = fit, color = type, fill = type, group = type)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.15, color = NA) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  facet_wrap(~institution) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  scale_y_continuous(
+    limits = c(1, 4),
+    breaks = 1:4,
+    labels = c("Not at all", "Not too much", "A good amount", "A great deal")
+  ) +
+  labs(
+    title = "Trust in Institutions by Perceived Fraud and Suppression",
+    subtitle = "Weighted regression predictions with 95% confidence intervals",
+    x = "Perceived Frequency",
+    y = "Trust",
+    color = "Threat Type",
+    fill = "Threat Type"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+
+
+
+pred_all %>%
+  mutate(ci_width = upper - lower) %>%
+  dplyr::select(institution, type, x, fit, lower, upper, ci_width)
+
+
+
+ggplot(pred_all,
+       aes(x = x, y = fit, color = type, fill = type, group = type)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  facet_wrap(~institution) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Rarely", "Occasionally", "Somewhat often", "Very often")
+  ) +
+  scale_y_continuous(
+    breaks = 1:4,
+    labels = c("Not at all", "Not too much", "A good amount", "A great deal")
+  ) +
+  labs(
+    title = "Trust in Institutions by Perceived Fraud and Suppression",
+    subtitle = "Weighted regression predictions with 95% confidence intervals",
+    x = "Perceived Frequency",
+    y = "Trust",
+    color = "Threat Type",
+    fill = "Threat Type"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+
+
+
+
+glimpse(issue)
+
+
+issue$race <- factor(issue$race)
+
+issue$race <- relevel(issue$race, ref = "White")
+model_usps_all <- lm(
+  usps_eval_clean ~ race,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_usps_all)
+
+
+
+
+
+
+
+issue <- issue %>%
+  mutate(
+    race = case_when(
+      white == 1 ~ "White",
+      black == 1 ~ "Black",
+      hispanic == 1 ~ "Hispanic",
+      TRUE ~ "Other"
+    )
+  )
+
+issue$race <- factor(issue$race)
+issue$race <- relevel(issue$race, ref = "White")
+
+
+table(issue$race, useNA = "ifany")
+levels(issue$race)
+
+
+
+model_usps_all <- lm(
+  usps_eval_clean ~ race,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_usps_all)
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r trust and suppresstion and fraud}
+glimpse(issue)
+
+
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    # ideology
+    IDEO_clean = case_when(
+      IDEO %in% 1:7 ~ as.numeric(IDEO),
+      TRUE ~ NA_real_
+    ),
+
+    # party ID cleaned
+    PARTYID_clean = case_when(
+      PARTYID %in% 1:4 ~ as.numeric(PARTYID),
+      TRUE ~ NA_real_
+    ),
+
+    # dem binary: Democrat = 1, Republican = 0, everyone else = NA
+    dem = case_when(
+      PARTYID_clean == 1 ~ 1,
+      PARTYID_clean == 2 ~ 0,
+      TRUE ~ NA_real_
+    ),
+
+    # race dummies from ppethm
+    white = case_when(
+      ppethm == 1 ~ 1,
+      ppethm %in% c(2, 3, 4, 5) ~ 0,
+      TRUE ~ NA_real_
+    ),
+    black = case_when(
+      ppethm == 2 ~ 1,
+      ppethm %in% c(1, 3, 4, 5) ~ 0,
+      TRUE ~ NA_real_
+    ),
+    hispanic = case_when(
+      ppethm == 4 ~ 1,
+      ppethm %in% c(1, 2, 3, 5) ~ 0,
+      TRUE ~ NA_real_
+    ),
+
+    # fraud / suppression: remove -1, then reverse so higher = more often
+    fraud_perception_clean = case_when(
+      Q27 %in% 1:4 ~ as.numeric(Q27),
+      TRUE ~ NA_real_
+    ),
+    suppression_perception_clean = case_when(
+      Q28 %in% 1:4 ~ as.numeric(Q28),
+      TRUE ~ NA_real_
+    ),
+
+    fraud_perception_rev = 5 - fraud_perception_clean,
+    suppression_perception_rev = 5 - suppression_perception_clean,
+
+    # trust variables from Q39
+    # original scale: 1 = a great deal, 4 = not at all
+    # reverse so higher = more trust
+    trust_legislature_clean = case_when(
+      Q39_1 %in% 1:4 ~ as.numeric(Q39_1),
+      TRUE ~ NA_real_
+    ),
+    trust_president_clean = case_when(
+      Q39_5 %in% 1:4 ~ as.numeric(Q39_5),
+      TRUE ~ NA_real_
+    ),
+    trust_congress_clean = case_when(
+      Q39_6 %in% 1:4 ~ as.numeric(Q39_6),
+      TRUE ~ NA_real_
+    ),
+    trust_state_elections_clean = case_when(
+      Q39_3 %in% 1:4 ~ as.numeric(Q39_3),
+      TRUE ~ NA_real_
+    ),
+    trust_local_elections_clean = case_when(
+      Q39_4 %in% 1:4 ~ as.numeric(Q39_4),
+      TRUE ~ NA_real_
+    ),
+
+    trust_legislature_rev = 5 - trust_legislature_clean,
+    trust_president_rev = 5 - trust_president_clean,
+    trust_congress_rev = 5 - trust_congress_clean,
+    trust_state_elections_rev = 5 - trust_state_elections_clean,
+    trust_local_elections_rev = 5 - trust_local_elections_clean
+  )
+
+
+
+
+
+issue <- issue %>%
+  mutate(
+    trust_legislature = na_if(Q39_1, -1),
+    trust_president = na_if(Q39_2, -1),
+    trust_congress = na_if(Q39_3, -1),
+    trust_state_elections = na_if(Q39_4, -1),
+    trust_local_elections = na_if(Q39_5, -1)
+  )
+
+
+
+summary(issue$trust_legislature)
+summary(issue$trust_state_elections)
+
+
+issue <- issue %>%
+  mutate(
+    trust_legislature_rev = 5 - trust_legislature,
+    trust_president_rev = 5 - trust_president,
+    trust_congress_rev = 5 - trust_congress,
+    trust_state_elections_rev = 5 - trust_state_elections,
+    trust_local_elections_rev = 5 - trust_local_elections
+  )
+
+table(issue$Q27, useNA = "ifany")
+table(issue$Q28, useNA = "ifany")
+table(issue$Q28a, useNA = "ifany")
+table(issue$Q29, useNA = "ifany")
+
+issue <- issue %>%
+  mutate(
+    Q27 = na_if(Q27, -1),
+    Q28 = na_if(Q28, -1),
+    Q28a = na_if(Q28a, -1),
+    Q29 = na_if(Q29, -1)
+  )
+
+issue <- issue %>%
+  mutate(
+    suppression_perception = na_if(Q27, -1),
+    fraud_perception = na_if(Q28, -1)
+  )
+
+table(issue$suppression_perception)
+table(issue$fraud_perception)
+
+
+issue <- issue %>%
+  mutate(
+    suppression_perception_rev = 5 - suppression_perception,
+    fraud_perception_rev = 5 - fraud_perception
+  )
+
+table(issue$suppression_perception_rev)
+table(issue$fraud_perception_rev)
+
+model_supp_leg <- lm(
+  suppression_perception_rev~ trust_legislature_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_supp_pres <- lm(
+  suppression_perception_rev ~ trust_president_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_supp_cong <- lm(
+  suppression_perception_rev ~ trust_congress_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_supp_state <- lm(
+  suppression_perception_rev ~ trust_state_elections_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_supp_local <- lm(
+  suppression_perception_rev ~ trust_local_elections_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_fraud_leg <- lm(
+  fraud_perception_rev ~ trust_legislature_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_fraud_pres <- lm(
+  fraud_perception_rev ~ trust_president_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_fraud_cong <- lm(
+  fraud_perception_rev ~ trust_congress_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_fraud_state <- lm(
+  fraud_perception_rev ~ trust_state_elections_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+model_fraud_local <- lm(
+  fraud_perception_rev ~ trust_local_elections_rev + black + hispanic + dem + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+
+
+summary(model_supp_leg)
+summary(model_supp_pres)
+summary(model_supp_cong)
+summary(model_supp_state)
+summary(model_supp_local)
+
+summary(model_fraud_leg)
+summary(model_fraud_pres)
+summary(model_fraud_cong)
+summary(model_fraud_state)
+summary(model_fraud_local)
+
+
+model_supp_all <- lm(
+  suppression_perception_rev ~ 
+    trust_legislature_rev +
+    trust_president_rev +
+    trust_congress_rev +
+    trust_state_elections_rev +
+    trust_local_elections_rev,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_supp_all)
+
+model_fraud_all <- lm(
+  fraud_perception_rev ~ 
+    trust_legislature_rev +
+    trust_president_rev +
+    trust_congress_rev +
+    trust_state_elections_rev +
+    trust_local_elections_rev,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_fraud_all)
+
+
+
+issue <- issue %>%
+  mutate(
+    dem_binary = case_when(
+      PARTYID_clean == 1 ~ 1,          # Democrat
+      PARTYID_clean %in% c(2,3,4) ~ 0, # everyone else
+      TRUE ~ NA_real_
+    )
+  )
+
+
+model_supp_allcontrol <- lm(
+  suppression_perception_rev ~ 
+    trust_legislature_rev +
+    trust_president_rev +
+    trust_congress_rev +
+    trust_state_elections_rev +
+    trust_local_elections_rev + black + hispanic + dem_binary + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_supp_allcontrol)
+
+model_fraud_allcontrol <- lm(
+  fraud_perception_rev ~ 
+    trust_legislature_rev +
+    trust_president_rev +
+    trust_congress_rev +
+    trust_state_elections_rev +
+    trust_local_elections_rev + black + hispanic + dem_binary + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_fraud_allcontrol)
+
+
+
+
+
+library(broom)
+library(dplyr)
+
+supp_tidy <- tidy(model_supp_allcontrol) %>%
+  filter(grepl("trust_", term)) %>%
+  mutate(outcome = "Suppression")
+
+fraud_tidy <- tidy(model_fraud_allcontrol) %>%
+  filter(grepl("trust_", term)) %>%
+  mutate(outcome = "Fraud")
+
+coef_data <- bind_rows(supp_tidy, fraud_tidy)
+
+
+
+coef_data <- coef_data %>%
+  mutate(
+    term = case_when(
+      term == "trust_legislature_rev" ~ "Legislature",
+      term == "trust_president_rev" ~ "President",
+      term == "trust_congress_rev" ~ "Congress",
+      term == "trust_state_elections_rev" ~ "State Elections",
+      term == "trust_local_elections_rev" ~ "Local Elections",
+      TRUE ~ term
+    )
+  )
+
+
+library(ggplot2)
+
+ggplot(coef_data,
+       aes(x = estimate,
+           y = term,
+           color = outcome)) +
+
+  geom_point(position = position_dodge(width = 0.4), size = 3) +
+
+  geom_errorbarh(
+    aes(xmin = estimate - 1.96 * std.error,
+        xmax = estimate + 1.96 * std.error),
+    position = position_dodge(width = 0.4),
+    height = 0.2
+  ) +
+
+  geom_vline(xintercept = 0, linetype = "dashed") +
+
+  labs(
+    title = "Effects of Institutional Trust on 
+    Perceptions of Suppression and Fraud",
+    x = "Coefficient (Effect on Outcome)",
+    y = "Type of Trust",
+    color = "Outcome"
+  ) +
+
+  theme_minimal(base_size = 14)
+
+
+
+ggplot(coef_data,
+       aes(x = estimate,
+           y = term)) +
+
+  geom_point(size = 3) +
+
+  geom_errorbarh(
+    aes(xmin = estimate - 1.96 * std.error,
+        xmax = estimate + 1.96 * std.error),
+    height = 0.2
+  ) +
+
+  geom_vline(xintercept = 0, linetype = "dashed") +
+
+  facet_wrap(~ outcome) +
+
+  theme_minimal()
+
+
+
+
+library(dplyr)
+library(purrr)
+library(ggplot2)
+
+trust_vars <- c(
+  "trust_legislature_rev",
+  "trust_president_rev",
+  "trust_congress_rev",
+  "trust_state_elections_rev",
+  "trust_local_elections_rev"
+)
+
+get_preds <- function(var, model, outcome_label, data) {
+
+  base <- data %>%
+    dplyr::summarise(
+      trust_legislature_rev = mean(trust_legislature_rev, na.rm = TRUE),
+      trust_president_rev = mean(trust_president_rev, na.rm = TRUE),
+      trust_congress_rev = mean(trust_congress_rev, na.rm = TRUE),
+      trust_state_elections_rev = mean(trust_state_elections_rev, na.rm = TRUE),
+      trust_local_elections_rev = mean(trust_local_elections_rev, na.rm = TRUE),
+      black = mean(black, na.rm = TRUE),
+      hispanic = mean(hispanic, na.rm = TRUE),
+      dem_binary = mean(dem_binary, na.rm = TRUE),
+      IDEO_clean = mean(IDEO_clean, na.rm = TRUE)
+    )
+
+  newdata <- base[rep(1, 4), ]
+  newdata[[var]] <- 1:4
+
+  p <- predict(model, newdata = newdata, se.fit = TRUE)
+
+  data.frame(
+    trust = var,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    outcome = outcome_label
+  )
+}
+
+pred_supp <- map_df(
+  trust_vars,
+  ~get_preds(.x, model_supp_allcontrol, "Suppression", issue)
+)
+
+pred_fraud <- map_df(
+  trust_vars,
+  ~get_preds(.x, model_fraud_allcontrol, "Fraud", issue)
+)
+
+pred_all <- bind_rows(pred_supp, pred_fraud)
+
+pred_all <- pred_all %>%
+  mutate(
+    trust = recode(trust,
+      "trust_legislature_rev" = "Legislature",
+      "trust_president_rev" = "President",
+      "trust_congress_rev" = "Congress",
+      "trust_state_elections_rev" = "State Elections",
+      "trust_local_elections_rev" = "Local Elections"
+    )
+  )
+
+
+#######this graph
+
+ggplot(pred_all,
+       aes(x = x, y = fit, color = outcome)) +
+  
+  geom_line(size = 1.2) +
+  
+  geom_ribbon(
+    aes(ymin = lower, ymax = upper, fill = outcome),
+    alpha = 0.2,
+    color = NA
+  ) +
+  
+  facet_wrap(~ trust) +
+  
+  labs(
+    title = "Predicted Effects of Trust on Suppression and Fraud Beliefs",
+    x = "Level of Trust (Low → High)",
+    y = "Predicted Perception",
+    color = "Outcome",
+    fill = "Outcome"
+  ) +
+  
+  theme_minimal(base_size = 14)
+
+
+
+```
+
+
+
+
+
+```{r likelihood vol by partisanship}
+
+
+
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    party_factor = case_when(
+      PARTYID %in% c(1, 2, 3, 4) ~ as.numeric(PARTYID),
+      TRUE ~ NA_real_
+    ),
+    party_factor = factor(
+      party_factor,
+      levels = c(1, 2, 3, 4),
+      labels = c("Democrat", "Republican", "Independent", "Other")
+    ),
+
+    volunteer_binary = case_when(
+      Q42 == 1 ~ 1,   # Yes
+      Q42 == 2 ~ 0,   # No
+      TRUE ~ NA_real_
+    ),
+
+    pollworker_binary = case_when(
+      Q44 == 1 ~ 1,   # Willing
+      Q44 == 2 ~ 0,   # Not willing
+      TRUE ~ NA_real_
+    )
+  )
+
+
+table(issue$party_factor, useNA = "ifany")
+table(issue$volunteer_binary, useNA = "ifany")
+table(issue$pollworker_binary, useNA = "ifany")
+
+
+volunteer_party <- issue %>%
+  filter(
+    !is.na(party_factor),
+    !is.na(volunteer_binary),
+    !is.na(WEIGHT)
+  ) %>%
+  group_by(party_factor) %>%
+  summarise(
+    pct_volunteer = weighted.mean(volunteer_binary, WEIGHT, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+
+volunteer_party
+
+
+
+pollworker_party <- issue %>%
+  filter(
+    !is.na(party_factor),
+    !is.na(pollworker_binary),
+    !is.na(WEIGHT)
+  ) %>%
+  group_by(party_factor) %>%
+  summarise(
+    pct_pollworker = weighted.mean(pollworker_binary, WEIGHT, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+
+pollworker_party
+
+
+model_volunteer_party <- glm(
+  volunteer_binary ~ party_factor,
+  data = issue,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_volunteer_party)
+
+model_pollworker_party <- glm(
+  pollworker_binary ~ party_factor,
+  data = issue,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_pollworker_party)
+
+
+model_volunteer_party_ctrl <- glm(
+  volunteer_binary ~ party_factor + IDEO_clean + black + hispanic,
+  data = issue,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_volunteer_party_ctrl)
+
+model_pollworker_party_ctrl <- glm(
+  pollworker_binary ~ party_factor + IDEO_clean + black + hispanic,
+  data = issue,
+  weights = WEIGHT,
+  family = binomial
+)
+summary(model_pollworker_party_ctrl)
+
+
+
+
+library(ggplot2)
+
+ggplot(volunteer_party, aes(x = party_factor, y = pct_volunteer)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = paste0(round(pct_volunteer * 100, 1), "%")),
+            vjust = -0.4, size = 4) +
+  scale_y_continuous(labels = scales::percent_format(),
+                     limits = c(0, max(volunteer_party$pct_volunteer) + 0.05)) +
+  labs(
+    title = "Likelihood of Volunteering by Partisanship",
+    x = "Partisanship",
+    y = "Weighted Percent"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+library(ggplot2)
+
+ggplot(volunteer_party, aes(x = party_factor, y = pct_volunteer)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = paste0(round(pct_volunteer * 100, 1), "%")),
+            vjust = -0.4, size = 4) +
+  scale_y_continuous(labels = scales::percent_format(),
+                     limits = c(0, max(volunteer_party$pct_volunteer) + 0.05)) +
+  labs(
+    title = "Likelihood of Volunteering by Partisanship",
+    x = "Partisanship",
+    y = "Weighted Percent"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+ggplot(pollworker_party, aes(x = party_factor, y = pct_pollworker)) +
+  geom_col(fill = "darkorange") +
+  geom_text(aes(label = paste0(round(pct_pollworker * 100, 1), "%")),
+            vjust = -0.4, size = 4) +
+  scale_y_continuous(labels = scales::percent_format(),
+                     limits = c(0, max(pollworker_party$pct_pollworker) + 0.05)) +
+  labs(
+    title = "Interest in Being a Poll Worker by Partisanship",
+    x = "Partisanship",
+    y = "Weighted Percent"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+library(ggplot2)
+
+pred_party <- data.frame(
+  party_factor = factor(
+    c("Democrat", "Republican", "Independent", "Other"),
+    levels = levels(issue$party_factor)
+  )
+)
+
+pred_out <- predict(
+  model_volunteer_party,
+  newdata = pred_party,
+  type = "link",
+  se.fit = TRUE
+)
+
+pred_party <- pred_party %>%
+  mutate(
+    fit = plogis(pred_out$fit),
+    lower = plogis(pred_out$fit - 1.96 * pred_out$se.fit),
+    upper = plogis(pred_out$fit + 1.96 * pred_out$se.fit)
+  )
+
+ggplot(pred_party, aes(x = party_factor, y = fit)) +
+  geom_point(size = 4, color = "steelblue") +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.15, linewidth = 1) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Predicted Probability of Volunteering by Partisanship",
+    x = "Partisanship",
+    y = "Probability of Volunteering"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+
+
+pred_party_pw <- data.frame(
+  party_factor = factor(
+    c("Democrat", "Republican", "Independent", "Other"),
+    levels = levels(issue$party_factor)
+  )
+)
+
+pred_out_pw <- predict(
+  model_pollworker_party,
+  newdata = pred_party_pw,
+  type = "link",
+  se.fit = TRUE
+)
+
+pred_party_pw <- pred_party_pw %>%
+  mutate(
+    fit = plogis(pred_out_pw$fit),
+    lower = plogis(pred_out_pw$fit - 1.96 * pred_out_pw$se.fit),
+    upper = plogis(pred_out_pw$fit + 1.96 * pred_out_pw$se.fit)
+  )
+
+
+ggplot(pred_party_pw, aes(x = party_factor, y = fit)) +
+  geom_point(size = 4, color = "darkorange") +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.15, linewidth = 1) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Predicted Probability of Poll Worker Interest by Partisanship",
+    x = "Partisanship",
+    y = "Probability"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+pred_party$type <- "Volunteering"
+pred_party_pw$type <- "Poll Worker"
+
+combined_preds <- bind_rows(pred_party, pred_party_pw)
+
+
+
+
+
+ggplot(combined_preds,
+       aes(x = party_factor, y = fit, color = type)) +
+  
+  geom_point(position = position_dodge(width = 0.3), size = 3) +
+  
+  geom_errorbar(
+    aes(ymin = lower, ymax = upper),
+    position = position_dodge(width = 0.3),
+    width = 0.15
+  ) +
+  
+  scale_y_continuous(labels = scales::percent_format()) +
+  
+  labs(
+    title = "Civic Participation by Partisanship",
+    x = "Partisanship",
+    y = "Predicted Probability",
+    color = "Activity"
+  ) +
+  
+  theme_minimal(base_size = 14)
+
+
+
+
+
+library(ggeffects)
+
+ggeffect(model_volunteer_party_ctrl, terms = "party_factor")
+
+
+
+
+
+
+library(broom)
+library(dplyr)
+library(ggplot2)
+
+vol_diff <- tidy(model_volunteer_party_ctrl) %>%
+  filter(grepl("^party_factor", term)) %>%
+  mutate(
+    activity = "Volunteering"
+  )
+
+poll_diff <- tidy(model_pollworker_party_ctrl) %>%
+  filter(grepl("^party_factor", term)) %>%
+  mutate(
+    activity = "Poll Worker Interest"
+  )
+
+diff_plot <- bind_rows(vol_diff, poll_diff)
+
+diff_plot <- diff_plot %>%
+  mutate(
+    party = case_when(
+      term == "party_factorRepublican" ~ "Republican vs Democrat",
+      term == "party_factorIndependent" ~ "Independent vs Democrat",
+      term == "party_factorOther" ~ "Other vs Democrat",
+      TRUE ~ term
+    )
+  )
+
+diff_plot <- diff_plot %>%
+  mutate(
+    lower = estimate - 1.96 * std.error,
+    upper = estimate + 1.96 * std.error
+  )
+
+
+ggplot(diff_plot,
+       aes(x = estimate, y = party, color = activity)) +
+  geom_point(position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbarh(
+    aes(xmin = lower, xmax = upper),
+    position = position_dodge(width = 0.5),
+    height = 0.2,
+    linewidth = 1
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Partisan Differences Relative to Democrats",
+    x = "Difference in Log-Odds",
+    y = "",
+    color = "Activity"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+ggplot(diff_plot,
+       aes(x = estimate, y = party)) +
+  geom_point(size = 3, color = "steelblue") +
+  geom_errorbarh(
+    aes(xmin = lower, xmax = upper),
+    height = 0.2,
+    linewidth = 1,
+    color = "steelblue"
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  facet_wrap(~activity) +
+  labs(
+    title = "Partisan Differences Relative to Democrats",
+    x = "Difference in Log-Odds",
+    y = ""
+  ) +
+  theme_minimal(base_size = 14)
+
+```
+
+```{r redo trust and fraud and suppression}
+
+table(issue$trust_local_elections_rev)
+
+get_preds_correct <- function(var, model, outcome_label, data) {
+  
+  # Get means for controls
+  base <- data %>%
+    summarise(
+      trust_legislature_rev = mean(trust_legislature_rev, na.rm = TRUE),
+      trust_president_rev = mean(trust_president_rev, na.rm = TRUE),
+      trust_congress_rev = mean(trust_congress_rev, na.rm = TRUE),
+      trust_state_elections_rev = mean(trust_state_elections_rev, na.rm = TRUE),
+      trust_local_elections_rev = mean(trust_local_elections_rev, na.rm = TRUE),
+      black = mean(black, na.rm = TRUE),
+      hispanic = mean(hispanic, na.rm = TRUE),
+      dem_binary = mean(dem_binary, na.rm = TRUE),
+      IDEO_clean = mean(IDEO_clean, na.rm = TRUE)
+    )
+  
+  # Expand across trust levels
+  newdata <- base[rep(1, 4), ]
+  newdata[[var]] <- 1:4
+  
+  p <- predict(model, newdata = newdata, se.fit = TRUE)
+  
+  data.frame(
+    trust = var,
+    x = 1:4,
+    fit = p$fit,
+    lower = p$fit - 1.96 * p$se.fit,
+    upper = p$fit + 1.96 * p$se.fit,
+    outcome = outcome_label
+  )
+}
+
+
+
+
+get_preds_correct <- function(var, model, outcome_label, data) {
+  
+  # Get means for controls
+  base <- data %>%
+    summarise(
+      trust_legislature_rev = mean(trust_legislature_rev, na.rm = TRUE),
+      trust_president_rev = mean(trust_president_rev, na.rm = TRUE),
+      trust_congress_rev = mean(trust_congress_rev, na.rm = TRUE),
+      trust_state_elections_rev = mean(trust_state_elections_rev, na.rm = TRUE),
+      trust_local_elections_rev = mean(trust_local_elections_rev, na.rm = TRUE),
+      black = mean(black, na.rm = TRUE),
+      hispanic = mean(hispanic, na.rm = TRUE),
+      dem_binary = mean(dem_binary, na.rm = TRUE),
+      IDEO_clean = mean(IDEO_clean, na.rm = TRUE)
+    )
+  
+  # Expand across trust levels
+  newdata <- base[rep(1, 4), ]
+  newdata[[var]] <- 1:4
+  
+  p <- predict(model, newdata = newdata, se.fit = TRUE)
+  
+  data.frame(
+    trust = var,
+    x = 1:4,
+    fit = p$fit,
+    lower = p$fit - 1.96 * p$se.fit,
+    upper = p$fit + 1.96 * p$se.fit,
+    outcome = outcome_label
+  )
+}
+
+
+ggplot(pred_all,
+       aes(x = x, y = fit, color = outcome)) +
+  
+  geom_line(size = 1.2) +
+  
+  geom_ribbon(
+    aes(ymin = lower, ymax = upper, fill = outcome),
+    alpha = 0.2,
+    color = NA
+  ) +
+  
+  facet_wrap(~ trust) +
+  
+  labs(
+    title = "Effect of Trust on Perceptions of Suppression and Fraud",
+    x = "Trust Level (Low → High)",
+    y = "Predicted Perception",
+    color = "Outcome",
+    fill = "Outcome"
+  ) +
+  
+  theme_minimal(base_size = 14)
+
+
+summary(issue$trust_local_elections_rev)
+
+
+
+table(issue$suppression_perception_rev)
+table(issue$fraud_perception_rev)
+
+
+
+
+
+
+
+
+
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    # ideology
+    IDEO_clean = case_when(
+      IDEO %in% 1:7 ~ as.numeric(IDEO),
+      TRUE ~ NA_real_
+    ),
+
+    # party
+    PARTYID_clean = case_when(
+      PARTYID %in% 1:4 ~ as.numeric(PARTYID),
+      TRUE ~ NA_real_
+    ),
+
+    dem_binary = case_when(
+      PARTYID_clean == 1 ~ 1,
+      PARTYID_clean %in% c(2, 3, 4) ~ 0,
+      TRUE ~ NA_real_
+    ),
+
+    # race
+    black = case_when(
+      ppethm == 2 ~ 1,
+      ppethm %in% c(1, 3, 4, 5) ~ 0,
+      TRUE ~ NA_real_
+    ),
+    hispanic = case_when(
+      ppethm == 4 ~ 1,
+      ppethm %in% c(1, 2, 3, 5) ~ 0,
+      TRUE ~ NA_real_
+    ),
+
+    # trust variables: original 1 = high trust, 4 = low trust
+    trust_legislature_clean = case_when(
+      Q39_1 %in% 1:4 ~ as.numeric(Q39_1),
+      TRUE ~ NA_real_
+    ),
+    trust_state_elections_clean = case_when(
+      Q39_3 %in% 1:4 ~ as.numeric(Q39_3),
+      TRUE ~ NA_real_
+    ),
+    trust_local_elections_clean = case_when(
+      Q39_4 %in% 1:4 ~ as.numeric(Q39_4),
+      TRUE ~ NA_real_
+    ),
+    trust_president_clean = case_when(
+      Q39_5 %in% 1:4 ~ as.numeric(Q39_5),
+      TRUE ~ NA_real_
+    ),
+    trust_congress_clean = case_when(
+      Q39_6 %in% 1:4 ~ as.numeric(Q39_6),
+      TRUE ~ NA_real_
+    ),
+
+    trust_legislature_rev = 5 - trust_legislature_clean,
+    trust_state_elections_rev = 5 - trust_state_elections_clean,
+    trust_local_elections_rev = 5 - trust_local_elections_clean,
+    trust_president_rev = 5 - trust_president_clean,
+    trust_congress_rev = 5 - trust_congress_clean,
+
+    # IMPORTANT: Q27 = fraud, Q28 = suppression
+    fraud_perception_clean = case_when(
+      Q27 %in% 1:4 ~ as.numeric(Q27),
+      TRUE ~ NA_real_
+    ),
+    suppression_perception_clean = case_when(
+      Q28 %in% 1:4 ~ as.numeric(Q28),
+      TRUE ~ NA_real_
+    ),
+
+    # reverse so higher = more often
+    fraud_perception_rev = 5 - fraud_perception_clean,
+    suppression_perception_rev = 5 - suppression_perception_clean
+  )
+
+
+table(issue$fraud_perception_rev, useNA = "ifany")
+table(issue$suppression_perception_rev, useNA = "ifany")
+
+
+
+model_supp_allcontrol <- lm(
+  suppression_perception_rev ~ 
+    trust_legislature_rev +
+    trust_president_rev +
+    trust_congress_rev +
+    trust_state_elections_rev +
+    trust_local_elections_rev +
+    black + hispanic + dem_binary + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_supp_allcontrol)
+
+
+
+
+model_fraud_allcontrol <- lm(
+  fraud_perception_rev ~ 
+    trust_legislature_rev +
+    trust_president_rev +
+    trust_congress_rev +
+    trust_state_elections_rev +
+    trust_local_elections_rev +
+    black + hispanic + dem_binary + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_fraud_allcontrol)
+
+
+
+
+
+
+
+
+
+
+
+
+library(dplyr)
+library(purrr)
+library(ggplot2)
+
+trust_vars <- c(
+  "trust_legislature_rev",
+  "trust_president_rev",
+  "trust_congress_rev",
+  "trust_state_elections_rev",
+  "trust_local_elections_rev"
+)
+
+get_preds_correct <- function(var, model, outcome_label, data) {
+  
+  base <- data %>%
+    summarise(
+      trust_legislature_rev = mean(trust_legislature_rev, na.rm = TRUE),
+      trust_president_rev = mean(trust_president_rev, na.rm = TRUE),
+      trust_congress_rev = mean(trust_congress_rev, na.rm = TRUE),
+      trust_state_elections_rev = mean(trust_state_elections_rev, na.rm = TRUE),
+      trust_local_elections_rev = mean(trust_local_elections_rev, na.rm = TRUE),
+      black = mean(black, na.rm = TRUE),
+      hispanic = mean(hispanic, na.rm = TRUE),
+      dem_binary = mean(dem_binary, na.rm = TRUE),
+      IDEO_clean = mean(IDEO_clean, na.rm = TRUE)
+    )
+  
+  newdata <- base[rep(1, 4), ]
+  newdata[[var]] <- 1:4
+  
+  p <- predict(model, newdata = newdata, se.fit = TRUE)
+  
+  data.frame(
+    trust = var,
+    x = 1:4,
+    fit = as.numeric(p$fit),
+    lower = as.numeric(p$fit - 1.96 * p$se.fit),
+    upper = as.numeric(p$fit + 1.96 * p$se.fit),
+    outcome = outcome_label
+  )
+}
+
+pred_supp <- map_df(
+  trust_vars,
+  ~get_preds_correct(.x, model_supp_allcontrol, "Suppression", issue)
+)
+
+pred_fraud <- map_df(
+  trust_vars,
+  ~get_preds_correct(.x, model_fraud_allcontrol, "Fraud", issue)
+)
+
+pred_all <- bind_rows(pred_supp, pred_fraud) %>%
+  mutate(
+    trust = case_when(
+      trust == "trust_legislature_rev" ~ "Legislature",
+      trust == "trust_president_rev" ~ "President",
+      trust == "trust_congress_rev" ~ "Congress",
+      trust == "trust_state_elections_rev" ~ "State Elections",
+      trust == "trust_local_elections_rev" ~ "Local Elections",
+      TRUE ~ trust
+    )
+  )
+
+ggplot(pred_all, aes(x = x, y = fit, color = outcome, fill = outcome)) +
+  geom_line(linewidth = 1.2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.18, color = NA) +
+  facet_wrap(~ trust) +
+  scale_x_continuous(
+    breaks = 1:4,
+    labels = c("Low", "2", "3", "High")
+  ) +
+  scale_y_continuous(
+    breaks = 1:4,
+    limits = c(min(pred_all$lower), max(pred_all$upper))
+  ) +
+  labs(
+    title = "Predicted Effects of Trust on Perceptions of Suppression and Fraud",
+    x = "Trust Level",
+    y = "Predicted Perception",
+    color = "Outcome",
+    fill = "Outcome"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+```
