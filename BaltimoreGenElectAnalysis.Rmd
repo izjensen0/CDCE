@@ -1,0 +1,1699 @@
+---
+title: "BaltimoreGenElectAnalysis"
+author: "Isabelle Jensen"
+date: "2026-02-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
+library(gt)
+library(kableExtra)
+library(ggplot2)
+library(scales)
+library(readxl)
+
+gen <- read_excel("BaltimoreGeneralElection.xlsx")
+prim <- read_excel("BaltimorePrimaryElection.xlsx")
+
+
+glimpse(gen)
+glimpse(prim)
+head(prim)
+```
+
+```{r}
+
+
+gen_clean <- gen %>%
+  mutate(
+    # Year might have *; keep digits only
+    Year_num = readr::parse_number(Year),
+    Year_lab = Year
+  ) %>%
+  # Convert "NR" to NA everywhere
+  mutate(across(everything(), ~ na_if(as.character(.x), "NR"))) %>%
+  # Convert numeric-like columns that are currently character to numeric
+  mutate(across(where(is.character), readr::parse_number))
+
+
+turnout_long <- gen_clean %>%
+  select(
+    Year_num, Year_lab,
+    overall = `% Turnout (total voters) Among Registered`,
+    mayor   = `% Turnout (total votes for Mayor) Among Registered`,
+    pcc     = `% Turnout (total votes for President City Council) Among Registered`
+  ) %>%
+  pivot_longer(cols = c(overall, mayor, pcc),
+               names_to = "contest",
+               values_to = "turnout") %>%
+  mutate(
+    contest = recode(contest,
+                     overall = "Overall ballots cast",
+                     mayor   = "Mayor",
+                     pcc     = "President of City Council")
+  )
+
+ggplot(turnout_long, aes(x = Year_num, y = turnout,
+                         color = contest,
+                         group = contest)) +
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 3) +
+
+  scale_color_manual(values = c(
+    "Overall ballots cast" = "black",
+    "Mayor" = "#1f78b4",
+    "President of City Council" = "#e31a1c"
+  )) +
+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = gen_clean$Year_num,
+                     labels = gen_clean$Year_lab) +
+
+  labs(
+    title = "Turnout among registered voters",
+    subtitle = "Overall ballots vs individual contests",
+    x = NULL,
+    y = "Turnout rate",
+    color = "Contest"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+
+
+
+
+
+demshare_long <- gen_clean %>%
+  select(
+    Year_num, Year_lab,
+    mayor = `% Dem Cand Votes for Mayor`,
+    pcc   = `% Dem Cand Votes for President of City Council`
+  ) %>%
+  pivot_longer(cols = c(mayor, pcc),
+               names_to = "contest",
+               values_to = "dem_share") %>%
+  mutate(
+    contest = recode(contest,
+                     mayor = "Mayor",
+                     pcc   = "President of City Council")
+  )
+
+
+ggplot(demshare_long,
+       aes(x = Year_num, y = dem_share,
+           color = contest, group = contest)) +
+
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 3) +
+
+  scale_color_manual(values = c(
+    "Mayor" = "#1f78b4",
+    "President of City Council" = "#e31a1c"
+  )) +
+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = gen_clean$Year_num,
+                     labels = gen_clean$Year_lab) +
+
+  labs(
+    title = "% Vote for the Democratic Candidate",
+    subtitle = "By office",
+    x = NULL,
+    y = "Democratic vote share",
+    color = "Contest"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+
+
+
+
+
+turnout_dem <- turnout_long %>%
+  filter(contest != "Overall ballots cast") %>%
+  left_join(
+    demshare_long,
+    by = c("Year_num", "Year_lab", "contest")
+  )
+
+ggplot(turnout_dem, aes(x = turnout, y = dem_share)) +
+  geom_point(size = 2) +
+  geom_text(aes(label = Year_lab), nudge_y = 0.01, size = 3, show.legend = FALSE) +
+  facet_wrap(~ contest) +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Turnout vs % Dem vote (by office)",
+    x = "Turnout among registered",
+    y = "% Dem vote"
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+
+mayor_votes_long <- gen_clean %>%
+  select(
+    Year_num, Year_lab,
+    dem   = `Mayor Democrat Candidate Votes`,
+    rep   = `Mayor Republican Candidate Votes`,
+    minor = `Mayor Minor Party Candidate Votes`,
+    write = `Mayor Write-in votes`
+  ) %>%
+  pivot_longer(cols = c(dem, rep, minor, write),
+               names_to = "choice",
+               values_to = "votes") %>%
+  group_by(Year_num, Year_lab) %>%
+  mutate(share = votes / sum(votes, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(mayor_votes_long,
+       aes(x = factor(Year_lab), y = share, fill = choice)) +
+
+  geom_col(width = .7) +
+
+  scale_fill_manual(values = c(
+    dem = "#2b8cbe",
+    rep = "#de2d26",
+    minor = "#756bb1",
+    write = "grey60"
+  ),
+  labels = c(
+    dem = "Democratic",
+    rep = "Republican",
+    minor = "Minor Party",
+    write = "Write-in"
+  )) +
+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+
+  labs(
+    title = "Mayor Election Vote Composition",
+    subtitle = "Share of votes cast for mayor",
+    x = NULL,
+    y = "Vote share",
+    fill = "Candidate type"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+
+
+undervote_long <- gen_clean %>%
+  select(
+    Year_num, Year_lab,
+    mayor = `Mayor Undervote %`,
+    pcc   = `President City Council Undervote %`
+  ) %>%
+  pivot_longer(cols = c(mayor, pcc),
+               names_to = "contest",
+               values_to = "undervote") %>%
+  mutate(
+    contest = recode(contest,
+                     mayor = "Mayor",
+                     pcc   = "President of City Council")
+  )
+
+ggplot(undervote_long,
+       aes(x = Year_num, y = undervote,
+           color = contest, group = contest)) +
+
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 3) +
+
+  scale_color_manual(values = c(
+    "Mayor" = "#1f78b4",
+    "President of City Council" = "#e31a1c"
+  )) +
+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = gen_clean$Year_num,
+                     labels = gen_clean$Year_lab) +
+
+  labs(
+    title = "Undervote Rate by Contest",
+    subtitle = "Ballot roll-off over time",
+    x = NULL,
+    y = "Undervote %",
+    color = "Contest"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+pcc_votes_long <- gen_clean %>%
+  select(
+    Year_num, Year_lab,
+    dem   = `President City Council Dem Cand Votes`,
+    rep   = `President City Council Rep Cand Votes`,
+    minor = `President City Council Minor Party Cand Votes`,
+    write = `President City Council Write-in Votes`
+  ) %>%
+  pivot_longer(cols = c(dem, rep, minor, write),
+               names_to = "choice",
+               values_to = "votes") %>%
+  filter(!is.na(votes)) %>%                 # drops NR years cleanly
+  group_by(Year_num, Year_lab) %>%
+  mutate(share = votes / sum(votes, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(pcc_votes_long,
+       aes(x = factor(Year_lab), y = share, fill = choice)) +
+  geom_col(width = .7) +
+
+  scale_fill_manual(
+    values = c(
+      dem = "#2b8cbe",
+      rep = "#de2d26",
+      minor = "#756bb1",
+      write = "grey60"
+    ),
+    labels = c(
+      dem = "Democratic",
+      rep = "Republican",
+      minor = "Minor Party",
+      write = "Write-in"
+    )
+  ) +
+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+
+  labs(
+    title = "President of City Council Vote Composition",
+    subtitle = "Share of votes cast for President of City Council",
+    x = NULL,
+    y = "Vote share",
+    fill = "Candidate type"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+
+
+
+
+library(tidyverse)
+library(scales)
+
+# 1) Build ONE long dataset for both offices
+votecomp_both <- bind_rows(
+  # Mayor
+  gen_clean %>%
+    select(
+      Year_num, Year_lab,
+      dem   = `Mayor Democrat Candidate Votes`,
+      rep   = `Mayor Republican Candidate Votes`,
+      minor = `Mayor Minor Party Candidate Votes`,
+      write = `Mayor Write-in votes`
+    ) %>%
+    pivot_longer(cols = c(dem, rep, minor, write),
+                 names_to = "choice",
+                 values_to = "votes") %>%
+    mutate(office = "Mayor"),
+
+  # President of City Council
+  gen_clean %>%
+    select(
+      Year_num, Year_lab,
+      dem   = `President City Council Dem Cand Votes`,
+      rep   = `President City Council Rep Cand Votes`,
+      minor = `President City Council Minor Party Cand Votes`,
+      write = `President City Council Write-in Votes`
+    ) %>%
+    pivot_longer(cols = c(dem, rep, minor, write),
+                 names_to = "choice",
+                 values_to = "votes") %>%
+    mutate(office = "President of City Council")
+) %>%
+  filter(!is.na(votes)) %>%  # drops NR years automatically
+  group_by(office, Year_num, Year_lab) %>%
+  mutate(share = votes / sum(votes, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(
+    choice = factor(choice, levels = c("dem", "rep", "minor", "write")),
+    label = if_else(share >= 0.03, percent(share, accuracy = 1), "") # hide tiny slivers
+  )
+
+# 2) Plot: stacked shares + percent labels, faceted by office
+ggplot(votecomp_both, aes(x = factor(Year_lab), y = share, fill = choice)) +
+  geom_col(width = .72) +
+
+  geom_text(
+    aes(label = label),
+    position = position_stack(vjust = 0.5),
+    size = 3,
+    color = "white"
+  ) +
+
+  facet_wrap(~ office, ncol = 1) +
+
+  scale_fill_manual(
+    values = c(
+      dem = "#2b8cbe",
+      rep = "#de2d26",
+      minor = "#756bb1",
+      write = "grey60"
+    ),
+    labels = c(
+      dem = "Democratic",
+      rep = "Republican",
+      minor = "Minor Party",
+      write = "Write-in"
+    )
+  ) +
+
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+
+  labs(
+    title = "Vote Composition by Office",
+    x = NULL,
+    y = "Share of votes cast in contest",
+    fill = "Candidate type"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+
+
+
+
+
+library(tidyverse)
+library(scales)
+
+gen2 <- gen_clean %>%
+  mutate(
+    Year_chr = as.character(Year),
+    Year_num = readr::parse_number(Year_chr),
+    Year_lab = Year_chr
+  ) %>%
+  mutate(across(everything(), ~ na_if(as.character(.x), "NR"))) %>%
+  mutate(across(where(is.character), readr::parse_number))
+
+
+comp <- gen2 %>%
+  transmute(
+    Year_num, Year_lab,
+    reg = Registration,
+
+    ballots = `Total Votes`,
+    turnout_overall = `% Turnout (total voters) Among Registered`,
+
+    mayor_votes = `Total Votes for Mayor`,
+    turnout_mayor = `% Turnout (total votes for Mayor) Among Registered`,
+
+    pcc_votes = `Total Votes for President City Council`,
+    turnout_pcc = `% Turnout (total votes for President City Council) Among Registered`
+  )
+
+
+
+
+
+
+rolloff_long <- comp %>%
+  select(Year_num, Year_lab, turnout_overall, turnout_mayor, turnout_pcc) %>%
+  pivot_longer(cols = c(turnout_mayor, turnout_pcc),
+               names_to = "contest",
+               values_to = "contest_turnout") %>%
+  mutate(
+    contest = recode(contest,
+                     turnout_mayor = "Mayor",
+                     turnout_pcc = "President of City Council"),
+    rolloff_gap = turnout_overall - contest_turnout
+  )
+
+ggplot(rolloff_long, aes(x = Year_num, y = rolloff_gap, color = contest, group = contest)) +
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("Mayor" = "#1f78b4", "President of City Council" = "#e31a1c")) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = comp$Year_num, labels = comp$Year_lab) +
+  labs(
+    title = "Ballot roll-off relative to overall turnout",
+    subtitle = "Overall turnout minus contest turnout",
+    x = NULL, y = "Roll-off gap",
+    color = "Contest"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+
+
+completion_long <- comp %>%
+  transmute(
+    Year_num, Year_lab,
+    Mayor = mayor_votes / ballots,
+    `President of City Council` = pcc_votes / ballots
+  ) %>%
+  pivot_longer(cols = c(`Mayor`, `President of City Council`),
+               names_to = "contest",
+               values_to = "completion_rate")
+
+ggplot(completion_long, aes(x = Year_num, y = completion_rate, color = contest, group = contest)) +
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("Mayor" = "#1f78b4", "President of City Council" = "#e31a1c")) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  scale_x_continuous(breaks = comp$Year_num, labels = comp$Year_lab) +
+  labs(
+    title = "Ballot completion rate by contest",
+    subtitle = "Contest votes divided by total ballots cast",
+    x = NULL, y = "Completion rate",
+    color = "Contest"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+
+
+dumbbell_long <- comp %>%
+  select(Year_num, Year_lab, turnout_overall, turnout_mayor, turnout_pcc) %>%
+  pivot_longer(cols = c(turnout_mayor, turnout_pcc),
+               names_to = "contest",
+               values_to = "contest_turnout") %>%
+  mutate(
+    contest = recode(contest,
+                     turnout_mayor = "Mayor",
+                     turnout_pcc = "President of City Council")
+  )
+
+ggplot(dumbbell_long, aes(y = factor(Year_lab))) +
+  geom_segment(aes(x = contest_turnout, xend = turnout_overall, yend = factor(Year_lab), color = contest),
+               linewidth = 1.2) +
+  geom_point(aes(x = contest_turnout, color = contest), size = 3) +
+  geom_point(aes(x = turnout_overall), size = 3, shape = 21, fill = "white") +
+  scale_color_manual(values = c("Mayor" = "#1f78b4", "President of City Council" = "#e31a1c")) +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Overall turnout vs contest turnout (within-year gaps)",
+    subtitle = "Open circle = overall turnout; colored point = contest turnout",
+    x = "Turnout among registered", y = NULL,
+    color = "Contest"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+water <- comp %>%
+  select(Year_num, Year_lab, reg, ballots, mayor_votes, pcc_votes) %>%
+  pivot_longer(cols = c(reg, ballots, mayor_votes, pcc_votes),
+               names_to = "stage",
+               values_to = "n") %>%
+  mutate(
+    stage = factor(stage,
+                   levels = c("reg", "ballots", "mayor_votes", "pcc_votes"),
+                   labels = c("Registered", "Ballots cast", "Votes for Mayor", "Votes for PCC"))
+  )
+
+ggplot(water, aes(x = stage, y = n, group = Year_lab)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  facet_wrap(~ Year_lab, scales = "free_y") +
+  labs(
+    title = "Participation drop-off (counts) from registration to contests",
+    subtitle = "Each panel is one election year",
+    x = NULL, y = "Count"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+
+
+heat <- completion_long %>%
+  mutate(Year_lab = factor(Year_lab, levels = unique(comp$Year_lab)))
+
+ggplot(heat, aes(x = contest, y = Year_lab, fill = completion_rate)) +
+  geom_tile(color = "white", linewidth = 1) +
+  geom_text(aes(label = percent(completion_rate, accuracy = 1)), color = "white", size = 3.5) +
+  scale_fill_gradient(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Ballot completion heatmap",
+    subtitle = "Contest votes as a share of total ballots cast",
+    x = NULL, y = NULL,
+    fill = "Completion"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+
+
+
+library(tidyverse)
+library(scales)
+
+dropoff_long <- gen2 %>%
+  transmute(
+    Year_num, Year_lab,
+    Mayor = `Total Votes` - `Total Votes for Mayor`,
+    `President of City Council` = `Total Votes` - `Total Votes for President City Council`
+  ) %>%
+  pivot_longer(cols = c(Mayor, `President of City Council`),
+               names_to = "contest",
+               values_to = "dropoff") %>%
+  filter(!is.na(dropoff))  # drops NR years automatically
+
+ggplot(dropoff_long, aes(x = factor(Year_lab), y = dropoff, fill = contest)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.65) +
+  scale_y_continuous(labels = comma) +
+  scale_fill_manual(values = c("Mayor" = "#1f78b4", "President of City Council" = "#e31a1c")) +
+  labs(
+    title = "Ballot drop-off by contest (counts)",
+    subtitle = "How many fewer votes were cast in each race than total ballots cast",
+    x = NULL, y = "Fewer votes than overall ballots",
+    fill = "Contest"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+
+
+turnout_counts_long <- gen2 %>%
+  select(Year_num, Year_lab,
+         ballots = `Total Votes`,
+         mayor_votes = `Total Votes for Mayor`,
+         pcc_votes = `Total Votes for President City Council`) %>%
+  pivot_longer(cols = c(mayor_votes, pcc_votes),
+               names_to = "contest",
+               values_to = "contest_votes") %>%
+  mutate(contest = recode(contest,
+                          mayor_votes = "Mayor",
+                          pcc_votes = "President of City Council")) %>%
+  filter(!is.na(contest_votes))
+
+ggplot(turnout_counts_long, aes(y = factor(Year_lab))) +
+  geom_segment(aes(x = contest_votes, xend = ballots, yend = factor(Year_lab), color = contest),
+               linewidth = 1.2) +
+  geom_point(aes(x = contest_votes, color = contest), size = 3) +
+  geom_point(aes(x = ballots), size = 3, shape = 21, fill = "white") +
+  scale_x_continuous(labels = comma) +
+  scale_color_manual(values = c("Mayor" = "#1f78b4", "President of City Council" = "#e31a1c")) +
+  labs(
+    title = "Total ballots vs contest votes (counts)",
+    subtitle = "White point = total ballots; colored point = contest votes; line length = drop-off",
+    x = "Number of ballots / votes", y = NULL,
+    color = "Contest"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+library(tidyverse)
+library(scales)
+
+dropoff_pct_long <- gen2 %>%
+  transmute(
+    Year_num, Year_lab,
+    Mayor = (`Total Votes` - `Total Votes for Mayor`) / `Total Votes`,
+    `President of City Council` =
+      (`Total Votes` - `Total Votes for President City Council`) / `Total Votes`
+  ) %>%
+  pivot_longer(cols = c(Mayor, `President of City Council`),
+               names_to = "contest",
+               values_to = "dropoff_pct") %>%
+  filter(!is.na(dropoff_pct))
+
+ggplot(dropoff_pct_long,
+       aes(x = factor(Year_lab), y = dropoff_pct, fill = contest)) +
+  geom_col(position = position_dodge(width = .75), width = .65) +
+  geom_text(aes(label = percent(dropoff_pct, accuracy = 0.1)),
+            position = position_dodge(width = .75),
+            vjust = -0.4, size = 3.5) +
+  scale_y_continuous(labels = percent_format(accuracy = 1),
+                     limits = c(0, max(dropoff_pct_long$dropoff_pct)*1.15)) +
+  scale_fill_manual(values = c("Mayor" = "#1f78b4",
+                               "President of City Council" = "#e31a1c")) +
+  labs(
+    title = "Percent of voters skipping each contest",
+    subtitle = "Share of ballots cast that did not include a vote in the race",
+    x = NULL, y = "Percent drop-off",
+    fill = "Contest"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+
+
+
+```
+
+## R Markdown
+
+
+```{r primary}
+
+
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readr)
+library(scales)
+
+glimpse(prim)
+
+
+prim2 <- prim %>%
+  mutate(Year = as.integer(Year))
+
+
+turnout_long <- prim2 %>%
+  select(
+    Year,
+    `Total turnout` = `% Turnout (total voters) Among Registered`,
+    `Mayor turnout` = `% Turnout (total votes for Mayor) Among Registered`,
+    `City Council turnout` = `% Turnout (total votes for President City Council) Among Registered`
+  ) %>%
+  pivot_longer(-Year, names_to = "Race", values_to = "Turnout")
+
+ggplot(turnout_long, aes(x = Year, y = Turnout, color = Race)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(turnout_long$Year))) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Primary Turnout (%) by Race and Year", x = NULL, y = "Turnout (%)", color = NULL) +
+  theme_minimal(base_size = 12)
+
+
+
+dem_long <- prim2 %>%
+  select(
+    Year,
+    `Mayor (Dem)` = `Mayor Democrat Candidate Votes`,
+    `City Council (Dem)` = `President City Council Dem Cand Votes`
+  ) %>%
+  pivot_longer(-Year, names_to = "Race", values_to = "DemVotes")
+
+ggplot(dem_long, aes(x = Year, y = DemVotes, color = Race)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(dem_long$Year))) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Democratic Votes by Race and Year", x = NULL, y = "Votes", color = NULL) +
+  theme_minimal(base_size = 12)
+
+
+
+
+rep_long <- prim2 %>%
+  select(
+    Year,
+    `Mayor (Rep)` = `Mayor Republican Candidate Votes`,
+    `City Council (Rep)` = `President City Council Rep Cand Votes`
+  ) %>%
+  pivot_longer(-Year, names_to = "Race", values_to = "RepVotes")
+
+ggplot(rep_long, aes(x = Year, y = RepVotes, color = Race)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(rep_long$Year))) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Republican Votes by Race and Year", x = NULL, y = "Votes", color = NULL) +
+  theme_minimal(base_size = 12)
+
+
+
+
+ggplot(prim2, aes(x = Year, y = `Mayor undervotes (Total Votes - Total Votes for Mayor)`)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(prim2$Year))) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Mayor Undervotes (Count) by Year", x = NULL, y = "Undervotes (count)") +
+  theme_minimal(base_size = 12)
+
+
+ggplot(prim2, aes(x = Year, y = `Mayor Undervote %`)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(prim2$Year))) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(title = "Mayor Undervote Rate by Year", x = NULL, y = "Undervote (%)") +
+  theme_minimal(base_size = 12)
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+
+prim_pct <- prim %>%
+  mutate(
+    # Mayor percentages
+    mayor_dem_pct = `Mayor Democrat Candidate Votes` / `Total Votes for Mayor`,
+    mayor_rep_pct = `Mayor Republican Candidate Votes` / `Total Votes for Mayor`,
+    
+    # City Council percentages
+    council_dem_pct = `President City Council Dem Cand Votes` / `Total Votes for President City Council`,
+    council_rep_pct = `President City Council Rep Cand Votes` / `Total Votes for President City Council`
+  )
+
+
+
+
+dem_long <- prim_pct %>%
+  select(
+    Year,
+    `Mayor` = mayor_dem_pct,
+    `City Council` = council_dem_pct
+  ) %>%
+  pivot_longer(-Year, names_to = "Race", values_to = "DemShare")
+
+ggplot(dem_long, aes(x = Year, y = DemShare, color = Race)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(dem_long$Year))) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Democratic Vote Share by Race and Year in the Primary",
+    x = NULL,
+    y = "Democratic Vote Share (%)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+rep_long <- prim_pct %>%
+  select(
+    Year,
+    `Mayor` = mayor_rep_pct,
+    `City Council` = council_rep_pct
+  ) %>%
+  pivot_longer(-Year, names_to = "Race", values_to = "RepShare")
+
+ggplot(rep_long, aes(x = Year, y = RepShare, color = Race)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(rep_long$Year))) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Republican Vote Share by Race and Year in the Primary",
+    x = NULL,
+    y = "Republican Vote Share (%)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+party_long <- prim_pct %>%
+  select(
+    Year,
+    mayor_dem_pct, mayor_rep_pct,
+    council_dem_pct, council_rep_pct
+  ) %>%
+  pivot_longer(-Year, names_to = "variable", values_to = "Share") %>%
+  separate(variable, into = c("Race", "Party", "pct"), sep = "_") %>%
+  mutate(
+    Race = recode(Race,
+                  mayor = "Mayor",
+                  council = "City Council"),
+    Party = recode(Party,
+                   dem = "Dem",
+                   rep = "Rep")
+  )
+
+ggplot(party_long, aes(x = Year, y = Share, color = Party)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  facet_wrap(~Race) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Party Vote Share by Race and Year",
+    x = NULL,
+    y = "Vote Share (%)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+
+party_long <- prim_pct %>%
+  select(
+    Year,
+    mayor_dem_pct, mayor_rep_pct,
+    council_dem_pct, council_rep_pct
+  ) %>%
+  pivot_longer(-Year, names_to = "variable", values_to = "Share") %>%
+  separate(variable, into = c("Race", "Party", "pct"), sep = "_") %>%
+  mutate(
+    Race = recode(Race,
+                  mayor = "Mayor",
+                  council = "City Council"),
+    Party = recode(Party,
+                   dem = "Dem",
+                   rep = "Rep")
+  )
+
+
+party_long <- party_long %>%
+  mutate(RaceParty = paste(Race, Party, sep = "_"))
+
+
+ggplot(party_long, aes(x = Year, y = Share, color = RaceParty)) +
+  geom_line(linewidth = 1.2, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(party_long$Year))) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  scale_color_manual(
+    values = c(
+      "Mayor_Dem" = "#08519c",        # darker blue
+      "City Council_Dem" = "#6baed6", # lighter blue
+      "Mayor_Rep" = "#a50f15",        # darker red
+      "City Council_Rep" = "#fb6a4a"  # lighter red
+    ),
+    labels = c(
+      "Mayor_Dem" = "Mayor – Dem",
+      "City Council_Dem" = "City Council – Dem",
+      "Mayor_Rep" = "Mayor – Rep",
+      "City Council_Rep" = "City Council – Rep"
+    )
+  ) +
+  labs(
+    title = "Party Vote Share by Race and Year",
+    x = NULL,
+    y = "Vote Share (%)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(scales)
+library(dplyr)
+
+prim2 <- prim %>% mutate(Year = as.integer(Year))
+
+ggplot(prim2, aes(
+  x = `Total Votes`,
+  y = `Mayor undervotes (Total Votes - Total Votes for Mayor)`
+)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_text(aes(label = Year), nudge_y = 50, check_overlap = TRUE) +
+  scale_x_continuous(labels = comma) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Mayor undervotes scale with total turnout volume",
+    x = "Total votes cast (all ballots)",
+    y = "Mayor undervotes (count)"
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+k <- with(prim2, mean(`Mayor undervotes (Total Votes - Total Votes for Mayor)` / `Total Votes`, na.rm = TRUE))
+
+ggplot(prim2, aes(
+  x = `Total Votes`,
+  y = `Mayor undervotes (Total Votes - Total Votes for Mayor)`
+)) +
+  geom_point(size = 3) +
+  geom_abline(intercept = 0, slope = k, linetype = "dashed", linewidth = 1) +
+  geom_text(aes(label = Year), nudge_y = 50, check_overlap = TRUE) +
+  scale_x_continuous(labels = comma) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Undervotes track a near-constant share of total ballots",
+    subtitle = paste0("Dashed line = average undervote rate (", percent(k, accuracy = 0.01), ")"),
+    x = "Total votes cast (all ballots)",
+    y = "Mayor undervotes (count)"
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+
+
+
+library(tidyr)
+
+undervote_ts <- prim2 %>%
+  transmute(
+    Year,
+    `Total Votes (count)` = `Total Votes`,
+    `Mayor Undervote Rate (%)` = `Mayor Undervote %`
+  ) %>%
+  pivot_longer(-Year, names_to = "Metric", values_to = "Value")
+
+ggplot(undervote_ts, aes(x = Year, y = Value)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  facet_wrap(~Metric, scales = "free_y", ncol = 1) +
+  scale_x_continuous(breaks = sort(unique(undervote_ts$Year))) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Turnout volume rises while mayor undervote rate stays relatively stable",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+
+undervote_ts <- prim %>%
+  transmute(
+    Year,
+    `Total Votes (count)` = `Total Votes`,
+    `Mayor Undervote Rate (%)` = `Mayor Undervote %` * 100
+  ) %>%
+  pivot_longer(-Year, names_to = "Metric", values_to = "Value")
+
+
+ggplot(undervote_ts, aes(x = Year, y = Value)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  facet_wrap(~Metric, scales = "free_y", ncol = 1) +
+  scale_x_continuous(breaks = sort(unique(undervote_ts$Year))) +
+  labs(
+    title = "Primary turnout volume and mayor undervote rate over time",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+ggplot(undervote_ts, aes(x = Year, y = Value)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  facet_wrap(~Metric, scales = "free_y", ncol = 1) +
+  scale_x_continuous(breaks = sort(unique(undervote_ts$Year))) +
+  theme_minimal(base_size = 13) +
+  theme(
+    strip.text = element_text(face = "bold"),
+    panel.spacing = unit(1, "lines")
+  ) +
+  labs(
+    title = "Turnout rises while mayor undervote rate remains relatively stable",
+    x = NULL,
+    y = NULL
+  )
+
+
+
+m <- lm(`Mayor undervotes (Total Votes - Total Votes for Mayor)` ~ `Total Votes`, data = prim2)
+
+prim_resid <- prim2 %>%
+  mutate(resid = resid(m))
+
+ggplot(prim_resid, aes(x = Year, y = resid)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  scale_x_continuous(breaks = sort(unique(prim_resid$Year))) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Deviations from a proportional undervote pattern",
+    subtitle = "Residuals from: undervotes ~ total votes",
+    x = NULL,
+    y = "Undervotes above/below proportional expectation"
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+ggplot(undervote_ts, aes(x = Year, y = Value)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  facet_wrap(~Metric, scales = "free_y", ncol = 1) +
+  scale_x_continuous(breaks = sort(unique(undervote_ts$Year))) +
+  theme_minimal(base_size = 13) +
+  theme(
+    strip.text = element_text(face = "bold"),
+    panel.spacing = unit(1, "lines")
+  ) +
+  labs(
+    title = "Turnout rises while mayor undervote rate remains relatively stable",
+    x = NULL,
+    y = NULL
+  )
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+
+prim2 <- prim %>%
+  mutate(Year = as.integer(Year))
+
+und_counts_long <- prim2 %>%
+  select(
+    Year,
+    `Mayor` = `Mayor undervotes (Total Votes - Total Votes for Mayor)`,
+    `City Council` = `President City Council Undervotes (Total Votes - Total Votes for President City Council)`
+  ) %>%
+  pivot_longer(-Year, names_to = "Race", values_to = "Undervotes")
+
+und_rate_long <- prim2 %>%
+  select(
+    Year,
+    `Mayor` = `Mayor Undervote %`,
+    `City Council` = `President City Council Undervote %`
+  ) %>%
+  pivot_longer(-Year, names_to = "Race", values_to = "UndervoteRate")
+
+
+ggplot(und_counts_long, aes(x = Year, y = Undervotes, color = Race)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(und_counts_long$Year))) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Undervotes (count) by race and year",
+    x = NULL, y = "Undervotes (count)", color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+
+ggplot(und_rate_long, aes(x = Year, y = UndervoteRate, color = Race)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  scale_x_continuous(breaks = sort(unique(und_rate_long$Year))) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Undervote rate (%) by race and year",
+    x = NULL, y = "Undervote rate (%)", color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+und_scatter <- prim2 %>%
+  select(
+    Year,
+    `Total Votes`,
+    mayor_und = `Mayor undervotes (Total Votes - Total Votes for Mayor)`,
+    council_und = `President City Council Undervotes (Total Votes - Total Votes for President City Council)`
+  ) %>%
+  pivot_longer(cols = c(mayor_und, council_und),
+               names_to = "Race", values_to = "Undervotes") %>%
+  mutate(Race = recode(Race, mayor_und = "Mayor", council_und = "City Council"))
+
+ggplot(und_scatter, aes(x = `Total Votes`, y = Undervotes, color = Race)) +
+  geom_point(size = 3, na.rm = TRUE) +
+  geom_smooth(method = "lm", se = FALSE, na.rm = TRUE) +
+  geom_text(aes(label = Year), nudge_y = 50, check_overlap = TRUE, show.legend = FALSE) +
+  scale_x_continuous(labels = comma) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Undervote counts vs total ballot volume",
+    x = "Total votes cast (all ballots)",
+    y = "Undervotes (count)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+und_both <- prim2 %>%
+  transmute(
+    Year,
+    `Mayor – Undervotes (count)` = `Mayor undervotes (Total Votes - Total Votes for Mayor)`,
+    `City Council – Undervotes (count)` = `President City Council Undervotes (Total Votes - Total Votes for President City Council)`,
+    `Mayor – Undervote rate (%)` = `Mayor Undervote %`,
+    `City Council – Undervote rate (%)` = `President City Council Undervote %`
+  ) %>%
+  pivot_longer(-Year, names_to = "Series", values_to = "Value") %>%
+  mutate(
+    Type = if_else(grepl("rate", Series), "Rate", "Count"),
+    Race = if_else(grepl("Mayor", Series), "Mayor", "City Council")
+  )
+
+ggplot(und_both, aes(x = Year, y = Value, color = Race)) +
+  geom_line(linewidth = 1, na.rm = TRUE) +
+  geom_point(size = 3, na.rm = TRUE) +
+  facet_wrap(~Type, scales = "free_y", ncol = 1) +
+  scale_x_continuous(breaks = sort(unique(und_both$Year))) +
+  labs(
+    title = "Undervotes over time: counts and rates",
+    x = NULL, y = NULL, color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+
+prim2 <- prim %>% mutate(Year = as.integer(Year))
+
+und_pct_vs_total <- prim2 %>%
+  select(
+    Year,
+    `Total Votes`,
+    `Mayor` = `Mayor Undervote %`,
+    `City Council` = `President City Council Undervote %`
+  ) %>%
+  pivot_longer(cols = c(`Mayor`, `City Council`),
+               names_to = "Race",
+               values_to = "UndervoteRate")
+
+ggplot(und_pct_vs_total, aes(x = `Total Votes`, y = UndervoteRate, color = Race)) +
+  geom_point(size = 3, na.rm = TRUE) +
+  geom_smooth(method = "lm", se = FALSE, na.rm = TRUE) +
+  geom_text(aes(label = Year), nudge_y = 0.003, check_overlap = TRUE, show.legend = FALSE) +
+  scale_x_continuous(labels = comma) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Undervote rate vs total ballot volume",
+    x = "Total votes cast (all ballots)",
+    y = "Undervote rate (%)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+und_count_vs_total <- prim2 %>%
+  select(
+    Year,
+    `Total Votes`,
+    `Mayor` = `Mayor undervotes (Total Votes - Total Votes for Mayor)`,
+    `City Council` = `President City Council Undervotes (Total Votes - Total Votes for President City Council)`
+  ) %>%
+  pivot_longer(cols = c(`Mayor`, `City Council`),
+               names_to = "Race",
+               values_to = "Undervotes") %>%
+  group_by(Race) %>%
+  mutate(avg_rate = mean(Undervotes / `Total Votes`, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(und_count_vs_total, aes(x = `Total Votes`, y = Undervotes, color = Race)) +
+  geom_point(size = 3, na.rm = TRUE) +
+  geom_abline(aes(intercept = 0, slope = avg_rate, color = Race),
+              linetype = "dashed", linewidth = 1) +
+  geom_text(aes(label = Year), nudge_y = 50, check_overlap = TRUE, show.legend = FALSE) +
+  scale_x_continuous(labels = comma) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Undervotes vs total votes (dashed = race-specific average rate)",
+    x = "Total votes cast (all ballots)",
+    y = "Undervotes (count)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12)
+
+
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+prim_index <- prim %>%
+  mutate(
+    total_index = `Total Votes` / first(`Total Votes`) * 100,
+    mayor_und_index = `Mayor undervotes (Total Votes - Total Votes for Mayor)` /
+                      first(`Mayor undervotes (Total Votes - Total Votes for Mayor)`) * 100,
+    council_und_index = `President City Council Undervotes (Total Votes - Total Votes for President City Council)` /
+                        first(`President City Council Undervotes (Total Votes - Total Votes for President City Council)`) * 100
+  ) %>%
+  select(Year, total_index, mayor_und_index, council_und_index) %>%
+  pivot_longer(-Year, names_to = "Series", values_to = "Index")
+
+ggplot(prim_index, aes(x = Year, y = Index, color = Series)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_x_continuous(breaks = sort(unique(prim$Year))) +
+  labs(
+    title = "Indexed change in total votes and undervotes (Base Year = 100)",
+    x = NULL,
+    y = "Index (Base Year = 100)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+und_share <- prim %>%
+  transmute(
+    Year,
+    Mayor_Und = `Mayor Undervote %`,
+    Council_Und = `President City Council Undervote %`
+  ) %>%
+  pivot_longer(-Year, names_to = "Race", values_to = "UndervoteRate")
+
+ggplot(und_share, aes(x = Year, y = UndervoteRate, fill = Race)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Undervote rate by race and year",
+    x = NULL,
+    y = "Undervote rate (%)",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+library(patchwork)
+
+p1 <- ggplot(prim, aes(x = Year, y = `Total Votes`)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  labs(title = "Total Votes", x = NULL, y = "Count") +
+  theme_minimal(base_size = 13)
+
+p2 <- ggplot(prim, aes(x = Year, y = `Mayor Undervote %`)) +
+  geom_line(linewidth = 1.2, color = "#08519c") +
+  geom_point(size = 3, color = "#08519c") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  labs(title = "Mayor Undervote Rate", x = NULL, y = "Percent") +
+  theme_minimal(base_size = 13)
+
+p3 <- ggplot(prim, aes(x = Year, y = `President City Council Undervote %`)) +
+  geom_line(linewidth = 1.2, color = "#a50f15") +
+  geom_point(size = 3, color = "#a50f15") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  labs(title = "City Council Undervote Rate", x = NULL, y = "Percent") +
+  theme_minimal(base_size = 13)
+
+p1 / p2 / p3
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r graphing}
+
+glimpse(gen_clean)
+glimpse(prim)
+
+
+
+
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(tidyr)
+
+# Keep just the years you want for the mayoral primary comparison
+prim_mayor <- prim %>%
+  dplyr::select(
+    Year,
+    total_votes = `Total Votes`,
+    mayor_votes = `Total Votes for Mayor`,
+    mayor_undervotes = `Mayor undervotes (Total Votes - Total Votes for Mayor)`,
+    mayor_undervote_pct = `Mayor Undervote %`
+  ) %>%
+  dplyr::filter(Year %in% c(2011, 2016, 2020)) %>%
+  dplyr::arrange(Year)
+
+prim_mayor
+
+
+
+
+baseline_2011 <- prim_mayor %>% dplyr::filter(Year == 2011)
+
+prim_change <- prim_mayor %>%
+  dplyr::mutate(
+    turnout_change = mayor_votes - baseline_2011$mayor_votes,
+    undervote_change = mayor_undervotes - baseline_2011$mayor_undervotes
+  )
+
+prim_change_long <- prim_change %>%
+  dplyr::select(Year, turnout_change, undervote_change) %>%
+  tidyr::pivot_longer(
+    cols = c(turnout_change, undervote_change),
+    names_to = "measure",
+    values_to = "change"
+  ) %>%
+  dplyr::mutate(
+    measure = dplyr::recode(
+      measure,
+      turnout_change = "Votes for mayor",
+      undervote_change = "Undervotes"
+    )
+  )
+
+ggplot(prim_change_long, aes(x = Year, y = change, group = measure)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_text(aes(label = comma(change)), vjust = -0.6, size = 4) +
+  scale_x_continuous(breaks = c(2011, 2016, 2020)) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Change from 2011 in Baltimore mayoral primary participation and undervotes",
+    x = NULL,
+    y = "Change from 2011",
+    linetype = NULL
+  ) +
+  facet_wrap(~measure, scales = "free_y") +
+  theme_minimal(base_size = 13)
+
+
+
+#this is it
+ggplot(prim_change_long, aes(x = Year, y = change, group = measure, linetype = measure)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_text(aes(label = comma(change)), vjust = -0.6, size = 4, show.legend = FALSE) +
+  scale_x_continuous(
+  breaks = c(2011, 2016, 2020),
+  expand = expansion(mult = c(0.1, 0.1))  # add space on BOTH sides
+) + 
+  scale_y_continuous(
+  labels = scales::comma,
+  expand = expansion(mult = c(0, 0.1))
+)+
+  labs(
+    title = "Turnout rose sharply while mayoral undervotes barely changed",
+    x = NULL,
+    y = "Change from 2011",
+    linetype = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+
+prim_bar <- prim_change %>%
+  dplyr::filter(Year != 2011) %>%
+  dplyr::select(Year, turnout_change, undervote_change) %>%
+  tidyr::pivot_longer(
+    cols = c(turnout_change, undervote_change),
+    names_to = "measure",
+    values_to = "change"
+  ) %>%
+  dplyr::mutate(
+    measure = dplyr::recode(
+      measure,
+      turnout_change = "Votes for mayor",
+      undervote_change = "Undervotes"
+    )
+  )
+
+ggplot(prim_bar, aes(x = factor(Year), y = change, fill = measure)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_text(
+    aes(label = comma(change)),
+    position = position_dodge(width = 0.7),
+    vjust = -0.4,
+    size = 4
+  ) +
+  scale_y_continuous(labels = comma, expand = expansion(mult = c(0, .08))) +
+  labs(
+    title = "Increase over 2011 baseline in Baltimore mayoral primaries",
+    x = NULL,
+    y = "Increase from 2011",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+prim_rate <- prim_mayor %>%
+  dplyr::mutate(
+    undervote_rate = mayor_undervotes / total_votes
+  )
+
+ggplot(prim_rate, aes(x = Year, y = undervote_rate)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_text(aes(label = percent(undervote_rate, accuracy = 0.1)), vjust = -0.6, size = 4) +
+  scale_x_continuous(breaks = c(2011, 2016, 2020)) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Mayoral undervote rate in Baltimore mayoral primaries",
+    x = NULL,
+    y = "Undervotes as share of all ballots cast"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+ggplot(prim_mayor, aes(x = Year, y = mayor_undervote_pct)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_text(aes(label = percent(mayor_undervote_pct, accuracy = 0.1)), vjust = -0.6, size = 4) +
+  scale_x_continuous(breaks = c(2011, 2016, 2020)) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Mayor undervote percentage over time",
+    x = NULL,
+    y = "Undervote percentage"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+prim_stack <- prim_mayor %>%
+  dplyr::transmute(
+    Year,
+    `Votes for mayor` = mayor_votes,
+    `Undervotes` = mayor_undervotes
+  ) %>%
+  tidyr::pivot_longer(
+    cols = c(`Votes for mayor`, `Undervotes`),
+    names_to = "type",
+    values_to = "count"
+  )
+
+ggplot(prim_stack, aes(x = factor(Year), y = count, fill = type)) +
+  geom_col(width = 0.7) +
+  geom_text(
+    aes(label = comma(count)),
+    position = position_stack(vjust = 0.5),
+    size = 4
+  ) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Composition of ballots cast in Baltimore mayoral primaries",
+    x = NULL,
+    y = "Ballots",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+ggplot(prim_stack, aes(x = factor(Year), y = count, fill = type)) +
+  geom_col(position = "fill", width = 0.7) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(
+    title = "Share of ballots cast for mayor vs left blank",
+    x = NULL,
+    y = "Share of ballots",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+prim_levels <- prim_mayor %>%
+  dplyr::select(Year, mayor_votes, mayor_undervotes) %>%
+  tidyr::pivot_longer(
+    cols = c(mayor_votes, mayor_undervotes),
+    names_to = "measure",
+    values_to = "count"
+  ) %>%
+  dplyr::mutate(
+    measure = dplyr::recode(
+      measure,
+      mayor_votes = "Votes for mayor",
+      mayor_undervotes = "Undervotes"
+    )
+  )
+
+ggplot(prim_levels, aes(x = Year, y = count, group = measure, linetype = measure)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_text(aes(label = comma(count)), vjust = -0.6, size = 4, show.legend = FALSE) +
+  scale_x_continuous(breaks = c(2011, 2016, 2020)) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Mayoral votes increased much more than mayoral undervotes",
+    x = NULL,
+    y = "Ballots",
+    linetype = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+prim_dumbbell <- prim_change %>%
+  dplyr::filter(Year != 2011) %>%
+  dplyr::transmute(
+    Year = factor(Year),
+    `Votes for mayor` = turnout_change,
+    `Undervotes` = undervote_change
+  )
+
+ggplot(prim_dumbbell, aes(y = Year)) +
+  geom_segment(aes(x = `Undervotes`, xend = `Votes for mayor`, yend = Year), linewidth = 1) +
+  geom_point(aes(x = `Undervotes`), size = 3) +
+  geom_point(aes(x = `Votes for mayor`), size = 3) +
+  geom_text(aes(x = `Undervotes`, label = comma(`Undervotes`)), hjust = 1.2, size = 4) +
+  geom_text(aes(x = `Votes for mayor`, label = comma(`Votes for mayor`)), hjust = -0.2, size = 4) +
+  scale_x_continuous(labels = comma) +
+  labs(
+    title = "Compared with 2011, turnout surged while undervotes barely changed",
+    x = "Increase from 2011",
+    y = NULL
+  ) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+
+
+
+
+prim_levels_long <- prim_mayor %>%
+  dplyr::select(Year, mayor_votes, mayor_undervotes) %>%
+  tidyr::pivot_longer(
+    cols = c(mayor_votes, mayor_undervotes),
+    names_to = "measure",
+    values_to = "count"
+  ) %>%
+  dplyr::mutate(
+    measure = dplyr::recode(
+      measure,
+      mayor_votes = "Votes for mayor",
+      mayor_undervotes = "Undervotes"
+    )
+  )
+
+
+ggplot(prim_levels_long, aes(x = Year, y = count, group = measure, linetype = measure)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  
+  geom_text(
+    aes(label = scales::comma(count)),
+    vjust = -0.6,
+    size = 4,
+    show.legend = FALSE
+  ) +
+  
+  scale_x_continuous(
+    breaks = c(2011, 2016, 2020),
+    expand = expansion(mult = c(0.1, 0.1))
+  ) +
+  
+  scale_y_continuous(
+    labels = scales::comma,
+    expand = expansion(mult = c(0, 0.15))
+  ) +
+  
+  labs(
+    title = "Votes for mayor increased while undervotes remained low",
+    x = NULL,
+    y = "Number of ballots",
+    linetype = NULL
+  ) +
+  
+  theme_minimal(base_size = 13)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
