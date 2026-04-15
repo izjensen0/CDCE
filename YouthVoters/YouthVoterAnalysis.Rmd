@@ -13,14 +13,14 @@ library(readr)
 
 
 MD_County_Registration <- read_excel("MD_County_Registration_and_Demos includes demonimator.xlsx")
-View(MD_County_Registration)
+#View(MD_County_Registration)
 
 
 mva_youth <- read_csv("mva_youth_and_MD_county_registration (1).csv")
-View(mva_youth)
+#View(mva_youth)
 
 data2 <- read_csv("data2.csv")
-View(data2)
+#View(data2)
 
 table(data2$county)
 table(mva_youth$county)
@@ -31,7 +31,7 @@ mva_youth_unique <- mva_youth %>% distinct(county, .keep_all = TRUE)
 
 merged_data <- left_join(data2_unique, mva_youth_unique, by = "county")
 final_data <- left_join(merged_data, MD_County_Registration, by = c("county" = "labels"))
-View(final_data)
+#View(final_data)
 
 head(final_data)
 
@@ -55,7 +55,7 @@ Note that some of the license data has weird gaps, just use the most recent avai
 
 
 ```{r making license percentages }
-View(final_data)
+#View(final_data)
 colnames(final_data)
 
 
@@ -146,7 +146,7 @@ summary(final_data$allyouthlicensepercent)
 
 ```{r 2021 bivariate no controls}
 colnames(final_data)
-View(final_data)
+#View(final_data)
 youth2021 <- read_csv("youthvoters2021.csv")
 
 sixteenjustprereg<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixteenlicensepercent, data = final_data)
@@ -214,7 +214,7 @@ merged_data <- left_join(data2, mva_youth, by = "county")
 alljoin <- left_join(merged_data, MD_County_Registration, by = c("county" = "labels"))
 colnames(alljoin)
 data2023 <- alljoin %>% filter(year.x == 2023 & year.y == 2023)
-View(data2023)
+#View(data2023)
 head(data2023)
 
 
@@ -327,13 +327,57 @@ percent_all_youth_with_license
     Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
   13.83   35.82   46.31   44.10   52.08   62.61 
   
+```{r fact check}
+glimpse(final_data)
+
+# Filter counties where 18-year-olds have more than 40% license
+counties_above_40 <- final_data %>%
+  filter(eighteenlicensepercent > 40)
+
+# Count the number of counties meeting this condition
+num_counties_above_40 <- nrow(counties_above_40)
+
+# Print the result
+num_counties_above_40
+
+colnames(final_data)
+
+summary(final_data$est_reg_rate_18_yo_as_of_202312.x)
+sum(is.na(final_data$est_reg_rate_18_yo_as_of_202312.x))  # Check for missing values in the registration rate column
+
+
+# Check the first few rows of the data to confirm the registration rate format
+head(final_data[, c("age18", "est_reg_rate_18_yo_as_of_202312.x")])
+
+# If the registration rate is already in decimal form, no need to divide by 100
+final_data$registration_rate <- final_data$est_reg_rate_18_yo_as_of_202312.x  # Don't divide by 100
+
+# Calculate the total number of 18-year-olds
+total_18_year_olds <- sum(final_data$age18)
+
+# Calculate the number of registered 18-year-olds
+total_registered_18_year_olds <- sum(final_data$age18 * final_data$registration_rate)
+
+# Calculate the number of unregistered 18-year-olds
+total_unregistered_18_year_olds <- total_18_year_olds - total_registered_18_year_olds
+
+# Calculate the proportion of unregistered 18-year-olds
+proportion_unregistered <- total_unregistered_18_year_olds / total_18_year_olds
+
+# Print the proportion of unregistered 18-year-olds
+proportion_unregistered
+
+
+
+```
+  
 ```{r graphs}
 
 colnames(final_data)
 sixandsevenjustprereg<-lm(est_prereg_rate_16_17_yo_as_of_202312.x ~ sixandseventeenlicensepercent, data = final_data)
 summary(sixandsevenjustprereg)
 
-View(final_data)
+#View(final_data)
 glimpse(final_data$est_prereg_rate_16_17_yo_as_of_202312.x)
 final_data$est_prereg_rate_16_17_yo_as_of_202312.percentage <- final_data$est_prereg_rate_16_17_yo_as_of_202312.x * 100
 
@@ -367,10 +411,11 @@ ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16
        y = "Preregistration Percentage of 16 and 17 Year Olds", 
        title = "Relationship Between 16 and 17 Year Old License Holding and Preregistration")
 
-
 data2023$countynice <- str_replace_all(data2023$county, "_", " ")  # Replace underscores
 data2023$countynice <- str_to_title(data2023$countynice)
 data2023$est_reg_rate_18_yo_as_of_202312.percentage <- data2023$est_reg_rate_18_yo_as_of_202312.x * 100
+
+
 ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_of_202312.percentage, label = countynice)) +
   geom_point() +  
   geom_smooth(method = "lm", color = "blue") +  # Add regression line
@@ -398,6 +443,21 @@ ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16
        title = "Relationship Between 16 and 17 Year Old License Holding and Preregistration")
 
 
+ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16_17_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point() +
+ # geom_text(size = 3, vjust = -0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  geom_text_repel(size = 3, box.padding = 0.25, point.padding = 0.3) + 
+    scale_x_continuous(limits = c(0, 35)) +
+  scale_y_continuous(limits = c(15, 50)) +
+  labs(
+    x = "% 16- and 17-Year-Olds With A Driver's License",
+    y = "% Pre-registered To Vote Among 16- and 17-Year-Olds"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_blank())
+
+
 
 data2023$est_prereg_rate_16_17_yo_as_of_202312.percentage <- data2023$est_prereg_rate_16_17_yo_as_of_202312.x * 100
 ggplot(data2023, aes(x = seventeenlicensepercent2023, y = est_prereg_rate_16_17_yo_as_of_202312.percentage, label = countynice)) +
@@ -418,6 +478,158 @@ ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_o
   labs(x = "Percent of 18 Year Olds with License", 
        y = "Registration Percentage of 18 Year Olds", 
        title = "Relationship Between 18 Year Old License Holding and Registration")
+
+ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  geom_text_repel(size = 3, box.padding = 0.25, point.padding = 0.3) + 
+  scale_x_continuous(limits = c(15, 75)) +
+  scale_y_continuous(limits = c(40, 80)) +
+  labs(
+    x = "% 18-Year-Olds With A Driver's License",
+    y = "% Registered To Vote Among 18-Year-Olds"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_blank())
+
+ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_of_202312.percentage, label = countynice)) +  # or use license_16_17 / prereg_16_17
+  geom_point() +
+  geom_text(size = 3, vjust = -0.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +  # 45° line
+  scale_x_continuous(limits = c(0, 80)) +
+  scale_y_continuous(limits = c(0, 80)) +
+  labs(
+    x = "% 18 Year Old With A Driver's License",
+    y = "% Registered"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_blank())
+
+
+
+ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16_17_yo_as_of_202312.percentage, label = countynice)) +  # or use license_16_17 / prereg_16_17
+  geom_point() +
+  geom_text(size = 3, vjust = -0.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +  # 45° line
+  scale_x_continuous(limits = c(0, 80)) +
+  scale_y_continuous(limits = c(0, 80)) +
+  labs(
+    x = "% 16 and 17 Year Olds With A Driver's License",
+    y = "% Pre-Registered"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_blank())
+
+```
+
+
+
+```{r adding branding to graphs}
+
+ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16_17_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point() +  
+  geom_smooth(method = "lm", color = "blue") +  # Add regression line
+  geom_text_repel(size = 3, box.padding = 0.25, point.padding = 0.3) +  # Improve label spacing
+  theme_gray() +  # Use a clean theme
+  labs(x = "Percent of 16 and 17 Year Olds with License", 
+       y = "Preregistration Percentage of 16 and 17 Year Olds", 
+       title = "Relationship Between 16 and 17 Year Old License Holding and Preregistration")
+
+
+# Load required libraries
+library(ggplot2)
+library(ggrepel)
+#install.packages("extrafont")
+library(extrafont)
+
+windowsFonts()
+
+
+font_import(pattern = "Roboto|Source")  # Use a pattern to filter relevant fonts
+loadfonts(device = "win")  # Make sure to load the fonts after import
+
+# Define custom colors
+yellow <- "#ffd200"
+bright_red <- "#e21833"
+dark_red <- "#bb0921"
+grey <- "#454545"
+
+# Create the plot
+ggplot(final_data, aes(x = sixandseventeenlicensepercent, y = est_prereg_rate_16_17_yo_as_of_202312.percentage)) +
+  geom_point(color = bright_red, alpha = 0.7) +  # Set opacity to make points more visible
+  geom_smooth(method = "lm", color = bright_red) +
+  geom_text_repel(aes(label = countynice), size = 3, box.padding = 0.25, point.padding = 0.3, color = grey) +  
+  theme_minimal(base_family = "Source Sans 3") +  # Correct font name used here
+  theme(
+    plot.title = element_text(family = "Roboto Condensed", face = "bold", size = 16, color = bright_red),
+    axis.title = element_text(family = "Source Sans 3", face = "bold", size = 12, color = grey),
+    axis.text = element_text(family = "Source Sans 3", size = 10, color = grey),
+    panel.grid.major = element_line(color = "grey", size = 0.5),  # Add major grid lines
+    panel.grid.minor = element_line(color = "lightgrey", size = 0.25),  # Add minor grid lines
+    plot.margin = margin(20, 20, 20, 20)  # Optional: Adjust margin
+  ) +
+  labs(
+    x = "Percent of 16- and 17-Year-Olds with License", 
+    y = "Preregistration Percentage of 16- and 17-Year-Olds", 
+    title = "Relationship Between 16- and 17-Year-Old License Holding\nand Preregistration"
+  )
+
+
+
+ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point(color = bright_red, alpha = 0.7) +  # Set point color to bright red and add transparency
+  geom_smooth(method = "lm", color = bright_red) +  # Add regression line with Bright Red
+  geom_text_repel(aes(label = countynice), size = 3, box.padding = 0.25, point.padding = 0.3, color = grey) +  # Adjust label spacing and set color
+  theme_minimal(base_family = "Source Sans 3") +  # Use Source Sans 3 for body/labels and minimal white background
+  theme(
+    plot.title = element_text(family = "Roboto Condensed", face = "bold", size = 16, color = bright_red),
+    axis.title = element_text(family = "Source Sans 3", face = "bold", size = 12, color = grey),
+    axis.text = element_text(family = "Source Sans 3", size = 10, color = grey),
+    panel.grid.major = element_line(color = "grey", size = 0.5),  # Change gridline color to grey (same as first plot)
+    panel.grid.minor = element_line(color = "lightgrey", size = 0.25),  # Light grey minor grid lines
+    plot.margin = margin(20, 20, 20, 20)  # Optional: Adjust margin
+  ) +
+  labs(
+    x = "Percent of 18-Year-Olds with License", 
+    y = "Registration Percentage of 18-Year-Olds", 
+    title = "Relationship Between 18-Year-Old License Holding\nand Registration"
+  )
+
+
+
+
+
+
+ggplot(data2023, aes(x = eighteenlicensepercent2023, y = est_reg_rate_18_yo_as_of_202312.percentage, label = countynice)) +
+  geom_point(color = bright_red, alpha = 0.7) +  # Set point color to bright red and add transparency
+  geom_smooth(method = "lm", color = bright_red) +  # Add regression line with Bright Red
+geom_text_repel(
+  aes(label = countynice),
+  size = 3,
+  box.padding = 0.1,   # Less space around label box
+  point.padding = 0.15,  # Less space around point
+  color = grey,
+  segment.color = "grey70",
+  segment.size = 0.3
+)+
+  theme_minimal(base_family = "Source Sans 3") +  # Use Source Sans 3 for body/labels and minimal white background
+  theme(
+    plot.title = element_text(family = "Roboto Condensed", face = "bold", size = 16, color = bright_red),
+    axis.title = element_text(family = "Source Sans 3", face = "bold", size = 12, color = grey),
+    axis.text = element_text(family = "Source Sans 3", size = 10, color = grey),
+    panel.grid.major = element_line(color = "grey", size = 0.5),  # Change gridline color to grey (same as first plot)
+    panel.grid.minor = element_line(color = "lightgrey", size = 0.25),  # Light grey minor grid lines
+    plot.margin = margin(20, 20, 20, 20)  # Optional: Adjust margin
+  ) +
+  labs(
+    x = "Percent of 18-Year-Olds with License", 
+    y = "Registration Percentage of 18-Year-Olds", 
+    title = "Relationship Between 18-Year-Old License Holding\nand Registration"
+  )
+
+
+
+
 
 
 
