@@ -1,0 +1,277 @@
+---
+title: "MailinMarylandFreq"
+author: "Isabelle Jensen"
+date: "2026-02-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
+library(gt)
+library(kableExtra)
+library(ggplot2)
+
+library(readxl)
+
+mailin <- read_excel("Mail-inList.xlsx")
+
+glimpse(mailin)
+
+table(mailin$AB_APP_STATUS)
+table(mailin$AB_TYPE)
+table(mailin$BALLOT_SENT_DATE)
+table(Responded = !is.na(mailin$BALLOT_SENT_DATE))
+table(Responded = !is.na(mailin$BALLOT_RETURNED_DATE))
+
+table(
+  Sent = !is.na(mailin$BALLOT_SENT_DATE),
+  Returned = !is.na(mailin$BALLOT_RETURNED_DATE)
+)
+
+mailin$days_to_return <- as.numeric(
+  mailin$BALLOT_RETURNED_DATE - mailin$BALLOT_SENT_DATE,
+  units = "days"
+)
+
+valid <- !is.na(mailin$days_to_return)
+summary(mailin$days_to_return[valid])
+sd(mailin$days_to_return[valid])
+
+mailin$days_to_return <- as.numeric(
+  mailin$BALLOT_RETURNED_DATE - mailin$BALLOT_SENT_DATE,
+  units = "days"
+)
+library(ggplot2)
+
+ggplot(mailin, aes(x = days_to_return)) +
+  geom_histogram(binwidth = 1, na.rm = TRUE) +
+  labs(
+    title = "Days Between Ballot Sent and Returned",
+    x = "Days to Return Ballot",
+    y = "Number of Voters"
+  ) +
+  theme_minimal()
+
+
+
+sum(mailin$days_to_return < 0, na.rm = TRUE)
+#795 people returned ballot before it was sent
+
+summary(mailin$days_to_return[mailin$days_to_return < 0])
+
+
+mailin$days_to_return_clean <- ifelse(mailin$days_to_return < 0, NA, mailin$days_to_return)
+
+
+valid <- !is.na(mailin$days_to_return_clean)
+sum(valid)
+
+c(
+  N = sum(valid),
+  Mean = mean(mailin$days_to_return_clean[valid]),
+  Median = median(mailin$days_to_return_clean[valid]),
+  SD = sd(mailin$days_to_return_clean[valid]),
+  Min = min(mailin$days_to_return_clean[valid]),
+  Max = max(mailin$days_to_return_clean[valid])
+)
+
+
+
+ggplot(mailin, aes(x = days_to_return_clean)) +
+  geom_density(na.rm = TRUE) +
+  labs(
+    title = "Density of Ballot Return Timing (No Negatives)",
+    x = "Days to Return Ballot After Sent",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r web request}
+glimpse(mailin$ABSENTEE_ADDRESS)
+glimpse(mailin$BALLOT_RETURNED_DATE)
+
+library(dplyr)
+
+mailin <- mailin %>%
+  mutate(
+    web_delivery = if_else(ABSENTEE_ADDRESS == "WEB DELIVERY", 1, 0),
+    ballot_returned = if_else(!is.na(BALLOT_RETURNED_DATE), 1, 0)
+  )
+
+
+table(mailin$web_delivery, mailin$ballot_returned)
+
+prop.table(
+  table(mailin$web_delivery, mailin$ballot_returned),
+  margin = 1
+)
+
+
+
+
+
+library(dplyr)
+
+mailin <- mailin %>%
+  mutate(
+    web_delivery = if_else(ABSENTEE_ADDRESS == "WEB DELIVERY", 1, 0),
+    ballot_returned = if_else(!is.na(BALLOT_RETURNED_DATE), 1, 0),
+    
+    web_delivery_lab = factor(
+      web_delivery,
+      levels = c(1, 0),
+      labels = c("Web Delivery", "Other")
+    ),
+    
+    ballot_returned_lab = factor(
+      ballot_returned,
+      levels = c(1, 0),
+      labels = c("Ballot Returned", "Not Returned")
+    )
+  )
+
+
+
+tab <- table(mailin$web_delivery_lab,
+             mailin$ballot_returned_lab)
+
+tab
+
+
+
+prop.table(tab, margin = 1)
+
+
+model1 <- glm(
+  ballot_returned ~ web_delivery,
+  data = mailin,
+  family = binomial(link = "logit")
+)
+
+summary(model1)
+
+
+
+glimpse(mailin$BALLOT_STATUS)
+
+
+
+mailin <- mailin %>%
+  mutate(
+    web_delivery = if_else(ABSENTEE_ADDRESS == "WEB DELIVERY", 1, 0),
+    accepted = if_else(BALLOT_STATUS == "Accepted", 1, 0)
+  )
+
+
+model_status <- glm(
+  accepted ~ web_delivery,
+  data = mailin,
+  family = binomial(link = "logit")
+)
+
+summary(model_status)
+
+
+
+library(dplyr)
+
+mailin <- mailin %>%
+  mutate(
+    web_delivery = if_else(ABSENTEE_ADDRESS == "WEB DELIVERY", 1, 0),
+    accepted = if_else(BALLOT_STATUS == "Accepted", 1, 0),
+    
+    web_delivery_lab = factor(
+      web_delivery,
+      levels = c(1, 0),
+      labels = c("Web Delivery", "Other")
+    ),
+    
+    accepted_lab = factor(
+      accepted,
+      levels = c(1, 0),
+      labels = c("Accepted", "Not Accepted")
+    )
+  )
+
+
+mailin %>%
+  tabyl(web_delivery_lab, accepted_lab) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns(position = "front")
+
+
+
+
+library(dplyr)
+
+mailin <- mailin %>%
+  mutate(
+    web_delivery = if_else(
+      ABSENTEE_ADDRESS == "WEB DELIVERY",
+      1, 0, 
+      missing = 0
+    ),
+    
+    accepted = if_else(
+      BALLOT_STATUS == "Accepted",
+      1, 0,
+      missing = 0
+    ),
+    
+    web_delivery_lab = factor(
+      web_delivery,
+      levels = c(1, 0),
+      labels = c("Web Delivery", "Other")
+    ),
+    
+    accepted_lab = factor(
+      accepted,
+      levels = c(1, 0),
+      labels = c("Accepted", "Not Accepted")
+    )
+  )
+
+
+library(janitor)
+
+mailin %>%
+  tabyl(web_delivery_lab, accepted_lab) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns(position = "front")
+
+table(mailin$web_delivery_lab)
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

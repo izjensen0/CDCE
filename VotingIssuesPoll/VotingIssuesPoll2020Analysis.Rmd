@@ -6362,3 +6362,215 @@ ggplot(pred_all, aes(x = x, y = fit, color = outcome, fill = outcome)) +
 
 
 ```
+
+```{r recode party}
+glimpse(issue)
+
+library(dplyr)
+
+issue <- issue %>%
+  mutate(
+    party_recode = case_when(
+      
+      # Strong partisans stay the same
+      PARTYID == 1 ~ "Democrat",
+      PARTYID == 2 ~ "Republican",
+      
+      # Independents who lean
+      PARTYID == 3 & PARTYLEAN == 1 ~ "Democrat",
+      PARTYID == 3 & PARTYLEAN == 2 ~ "Republican",
+      
+      # Pure independents (no lean or missing lean)
+      PARTYID == 3 ~ "Independent",
+      
+      # Other / DK / refused → Independent
+      PARTYID %in% c(4, -1, NA) ~ "Independent",
+      
+      TRUE ~ NA_character_
+    )
+  )
+
+issue <- issue %>%
+  mutate(
+    educ_cont = as.numeric(ppeduc),
+    educ_0to1 = (educ_cont - min(educ_cont, na.rm = TRUE)) /
+                (max(educ_cont, na.rm = TRUE) - min(educ_cont, na.rm = TRUE))
+  )
+
+
+issue <- issue %>%
+  mutate(
+    income_cont = ifelse(ppincimp < 0, NA, as.numeric(ppincimp)),
+    income_0to1 = (income_cont - min(income_cont, na.rm = TRUE)) /
+                  (max(income_cont, na.rm = TRUE) - min(income_cont, na.rm = TRUE))
+  )
+
+
+issue <- issue %>%
+  mutate(
+    party_factor = factor(
+      party_recode,
+      levels = c("Independent", "Democrat", "Republican")  # reference = Independent
+    )
+  )
+
+model_volunteer_party_ctrl <- glm(
+  volunteer_binary ~ party_factor + fraud_perception_rev  + suppression_perception_rev+  IDEO_clean + black + hispanic + educ_0to1 + income_0to1,
+  data = issue,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_volunteer_party_ctrl)
+
+
+model_pollworker_party_independentcompar <- glm(
+  pollworker_binary ~ party_factor + fraud_perception_rev  + suppression_perception_rev+ IDEO_clean + black + hispanic + educ_0to1 + income_0to1,
+  data = issue,
+  weights = WEIGHT,
+  family = binomial
+)
+summary(model_pollworker_party_independentcompar)
+
+
+
+
+issue <- issue %>%
+  mutate(
+    party_factor_demref = relevel(party_factor, ref = "Democrat")
+  )
+
+
+
+model_pollworker_party_demref <- glm(
+  pollworker_binary ~ party_factor_demref + 
+    fraud_perception_rev + suppression_perception_rev +
+    IDEO_clean + black + hispanic + educ_0to1 + income_0to1,
+  data = issue,
+  weights = WEIGHT,
+  family = binomial
+)
+
+summary(model_pollworker_party_demref)
+
+
+
+
+
+
+
+
+
+
+model_supp_allcontrol <- lm(
+  suppression_perception_rev ~ 
+    trust_legislature_rev +
+    trust_president_rev +
+    trust_congress_rev +
+    trust_state_elections_rev +
+    trust_local_elections_rev +
+    black + hispanic + party_factor + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_supp_allcontrol)
+
+
+
+
+model_fraud_allcontrol <- lm(
+  fraud_perception_rev ~ 
+    trust_legislature_rev +
+    trust_president_rev +
+    trust_congress_rev +
+    trust_state_elections_rev +
+    trust_local_elections_rev +
+    black + hispanic + party_factor + IDEO_clean,
+  data = issue,
+  weights = WEIGHT
+)
+
+summary(model_fraud_allcontrol)
+
+
+```
+
+```{r updated graphs for party and volunteer/pollworker}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+
+plot_dat <- issue %>%
+  filter(!is.na(party_factor)) %>%
+  group_by(party_factor) %>%
+  summarise(
+    volunteer_rate = weighted.mean(volunteer_binary, WEIGHT, na.rm = TRUE),
+    pollworker_rate = weighted.mean(pollworker_binary, WEIGHT, na.rm = TRUE),
+    w_sum = sum(WEIGHT, na.rm = TRUE),
+    w_sq_sum = sum(WEIGHT^2, na.rm = TRUE),
+    n_eff = (w_sum^2) / w_sq_sum,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    volunteer_se = sqrt((volunteer_rate * (1 - volunteer_rate)) / n_eff),
+    pollworker_se = sqrt((pollworker_rate * (1 - pollworker_rate)) / n_eff),
+    volunteer_low = pmax(0, volunteer_rate - 1.96 * volunteer_se),
+    volunteer_high = pmin(1, volunteer_rate + 1.96 * volunteer_se),
+    pollworker_low = pmax(0, pollworker_rate - 1.96 * pollworker_se),
+    pollworker_high = pmin(1, pollworker_rate + 1.96 * pollworker_se)
+  )
+
+plot_long <- plot_dat %>%
+  dplyr::select(
+    party_factor,
+    volunteer_rate, volunteer_low, volunteer_high,
+    pollworker_rate, pollworker_low, pollworker_high
+  ) %>%
+  pivot_longer(
+    cols = -party_factor,
+    names_to = c("outcome", ".value"),
+    names_pattern = "(volunteer|pollworker)_(rate|low|high)"
+  ) %>%
+  mutate(
+    outcome = dplyr::recode(
+      outcome,
+      volunteer = "Volunteered",
+      pollworker = "Willing to be Poll Worker"
+    )
+  )
+
+ggplot(plot_long, aes(x = party_factor, y = rate)) +
+  geom_col(width = 0.7, fill = "steelblue") +
+  geom_errorbar(
+    aes(ymin = low, ymax = high),
+    width = 0.2,
+    linewidth = 0.8
+  ) +
+  geom_text(
+    aes(label = percent(rate, accuracy = 1)),
+    vjust = -0.4,
+    size = 4
+  ) +
+  facet_wrap(~ outcome) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    expand = expansion(mult = c(0, 0.1))
+  ) +
+  labs(
+    title = "Civic Engagement by Partisanship",
+    x = "Partisanship",
+    y = "Percent"
+  ) +
+  theme_minimal()
+
+
+
+
+
+
+
+
+```

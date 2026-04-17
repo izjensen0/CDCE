@@ -1,0 +1,411 @@
+---
+title: "ProvisionalBallotsAnalysis"
+author: "Isabelle Jensen"
+date: "2026-04-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(data.table)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(gmodels)
+library(gt)
+library(kableExtra)
+library(ggplot2)
+library(scales)
+
+library(haven)
+
+
+prov <- read_excel("Alysoun copy of ProvisionalList.xlsx")
+pollplace <- read_excel("Polling Places AEMS PG24 MD state list of polling places.xlsx")
+
+glimpse(prov)
+
+table(prov$BALLOT_ISSUE_REASON)
+table(prov$PROVISIONAL_STATUS_REASON)
+table(prov$PROVISIONAL_STATUS)
+glimpse(pollplace)
+```
+
+
+
+```{r making the prov case label}
+
+library(dplyr)
+library(stringr)
+
+cutoff_date <- as.Date("2024-10-15")
+
+prov <- prov %>%
+  mutate(
+    STATE_REG_DATE = as.Date(STATE_REG_DATE),
+    COUNTY_REG_DATE = as.Date(COUNTY_REG_DATE),
+    
+    prov_case_type = case_when(
+      
+      # ABS AIF
+      PROVISIONAL_STATUS == "Accepted in Full" &
+        BALLOT_ISSUE_REASON == "04 - Listed as Absentee Voter or Already Voted" ~ "ABS AIF",
+      
+      # ABS AIP
+      PROVISIONAL_STATUS == "Accepted in Part" &
+        BALLOT_ISSUE_REASON == "04 - Listed as Absentee Voter or Already Voted" ~ "ABS AIP",
+      
+      # PP AIF
+      PROVISIONAL_STATUS == "Accepted in Full" &
+        PROVISIONAL_STATUS_REASON == "Applicant voted in wrong precinct" &
+        STATE_REG_DATE < cutoff_date ~ "PP AIF",
+      
+      # PP AIP
+      PROVISIONAL_STATUS == "Accepted in Part" &
+        PROVISIONAL_STATUS_REASON == "Applicant voted in wrong precinct" &
+        STATE_REG_DATE < cutoff_date ~ "PP AIP",
+      
+      # SDR PP
+      PROVISIONAL_STATUS == "Accepted in Full" &
+        PROVISIONAL_STATUS_REASON == "Applicant voted in wrong precinct" &
+        STATE_REG_DATE >= cutoff_date ~ "SDR PP",
+      
+      # REG MOVE
+      PROVISIONAL_STATUS == "Accepted in Full" &
+        (
+          BALLOT_ISSUE_REASON == "02 - Change of Address" |
+          (STATE_REG_DATE < cutoff_date & COUNTY_REG_DATE >= cutoff_date)
+        ) ~ "REG MOVE",
+      
+      # REJ DOUBLE
+      PROVISIONAL_STATUS == "Rejected" &
+        PROVISIONAL_STATUS_REASON == "02 - Applicant returned a voted absentee ballot or already voted" ~ "REJ DOUBLE",
+      
+      # REJ NO ID
+      PROVISIONAL_STATUS == "Rejected" &
+        BALLOT_ISSUE_REASON == "07 - Listed as Pending Voter and Need DL-SSN" &
+        STATE_REG_DATE < cutoff_date ~ "REJ NO ID",
+      
+      # REJ NO RES
+      PROVISIONAL_STATUS == "Rejected" &
+        BALLOT_ISSUE_REASON == "07 - Listed as Pending Voter and Need DL-SSN" &
+        STATE_REG_DATE >= cutoff_date ~ "REJ NO RES",
+      
+      # REG AIF = no discernible reason
+      PROVISIONAL_STATUS == "Accepted in Full" &
+        (
+          is.na(PROVISIONAL_STATUS_REASON) |
+          str_trim(PROVISIONAL_STATUS_REASON) == ""
+        ) ~ "REG AIF",
+      
+      TRUE ~ NA_character_
+    )
+  )
+
+
+table(prov$prov_case_type)
+
+
+prov <- prov %>%
+  mutate(
+    STATE_REG_DATE = as.Date(STATE_REG_DATE),
+    VOTED_DATE = as.Date(VOTED_DATE),
+
+    samedayreg = if_else(
+      STATE_REG_DATE >= VOTED_DATE,
+      1,
+      0
+    )
+  )
+
+
+library(dplyr)
+library(lubridate)
+
+ref_date <- as.Date("2024-11-05")
+
+prov <- prov %>%
+  mutate(
+    DATE_OF_BIRTH = as.Date(DATE_OF_BIRTH),
+    
+    age = floor(time_length(interval(DATE_OF_BIRTH, ref_date), "years")),
+    
+    age_group = case_when(
+      age < 18 ~ "Under 18",
+      age >= 18 & age <= 24 ~ "18-24",
+      age >= 25 & age <= 34 ~ "25-34",
+      age >= 35 & age <= 44 ~ "35-44",
+      age >= 45 & age <= 54 ~ "45-54",
+      age >= 55 & age <= 64 ~ "55-64",
+      age >= 65 ~ "65+",
+      TRUE ~ NA_character_
+    ),
+    
+    age_group = factor(
+      age_group,
+      levels = c("Under 18", "18-24", "25-34", "35-44", "45-54", "55-64", "65+")
+    )
+  )
+
+
+table(prov$age_group, useNA = "ifany")
+
+
+library(dplyr)
+library(stringr)
+
+
+prov <- prov %>%
+  mutate(
+    precinct_clean = str_trim(POLLING_PLACE_PRECINCT),
+
+    jurisdiction = case_when(
+      # anything starting with E
+      str_detect(precinct_clean, "^E") ~ "E",
+
+      # 4-digit numeric -> first digit
+      str_detect(precinct_clean, "^[0-9]{4}$") ~ str_sub(precinct_clean, 1, 1),
+
+      # 5-digit numeric -> first two digits
+      str_detect(precinct_clean, "^[0-9]{5}$") ~ str_sub(precinct_clean, 1, 2),
+
+      TRUE ~ NA_character_
+    ),
+
+    # remove 99 and anything not 1–24
+    jurisdiction = case_when(
+      jurisdiction %in% as.character(1:24) ~ jurisdiction,
+      jurisdiction == "E" ~ "E",
+      TRUE ~ NA_character_
+    )
+  )
+
+
+
+table(prov$jurisdiction)
+
+
+
+
+
+
+library(dplyr)
+
+juris_lookup <- pollplace %>%
+  distinct(JURISDICTION, COUNTY_NAME) %>%
+  mutate(jurisdiction = as.character(JURISDICTION)) %>%
+  dplyr::select(jurisdiction, COUNTY_NAME)
+
+prov <- prov %>%
+  left_join(juris_lookup, by = "jurisdiction") %>%
+  rename(county = COUNTY_NAME)
+
+
+prov <- prov %>%
+  mutate(
+    county = case_when(
+      jurisdiction == "E" ~ "Early Voting",
+      TRUE ~ county
+    )
+  )
+
+
+table(prov$county, useNA = "ifany")
+
+```
+
+
+```{r analysis without voter file: age}
+
+table(prov$samedayreg, prov$age_group, useNA = "ifany")
+
+
+tab <- table(prov$samedayreg, prov$age_group)
+prop.table(tab, margin = 2) * 100
+
+
+
+
+
+prov <- prov %>%
+  mutate(
+    prov_status_simple = case_when(
+      PROVISIONAL_STATUS == "Accepted in Full" ~ "Accepted in Full",
+      PROVISIONAL_STATUS == "Accepted in Part" ~ "Accepted in Part",
+      PROVISIONAL_STATUS == "Rejected" ~ "Rejected",
+      TRUE ~ NA_character_
+    ),
+    
+    prov_status_simple = factor(
+      prov_status_simple,
+      levels = c("Accepted in Full", "Accepted in Part", "Rejected")
+    )
+  )
+
+tab <- table(prov$prov_status_simple, prov$age_group)
+
+# column percentages (each age group sums to 100)
+col_perc <- prop.table(tab, margin = 2) * 100
+
+col_perc
+
+
+
+
+
+
+```
+           Under18    18-24    25-34    35-44    45-54    55-64      65+
+  not     78.57143 70.88829 76.94898 80.47168 85.34679 87.57965 88.93728
+  sameday 21.42857 29.11171 23.05102 19.52832 14.65321 12.42035 11.06272
+  
+  
+                    Under 18     18-24     25-34     35-44     45-54     55-64       65+
+  Accepted in Full  0.000000 64.589502 75.468741 79.547844 80.683230 80.721460 85.148084
+  Accepted in Part  7.142857 32.466353 22.232542 18.172600 17.339545 16.794470 11.236934
+  Rejected         92.857143  2.944145  2.298717  2.279555  1.977226  2.484070  3.614983
+
+
+```{r analysis without voter file: county}
+
+
+table(prov$samedayreg, prov$county, useNA = "ifany")
+
+
+prov <- prov %>%
+  mutate(
+    samedayreg_label = factor(
+      samedayreg,
+      levels = c(0, 1),
+      labels = c("Not Same Day", "Same Day")
+    )
+  )
+
+
+tab <- table(prov$samedayreg_label, prov$county)
+
+# column percentages (each county sums to 100)
+col_perc <- prop.table(tab, margin = 2) * 100
+
+col_perc
+
+
+
+prov <- prov %>%
+  mutate(
+    prov_status_simple = case_when(
+      PROVISIONAL_STATUS == "Accepted in Full" ~ "Accepted in Full",
+      PROVISIONAL_STATUS == "Accepted in Part" ~ "Accepted in Part",
+      PROVISIONAL_STATUS == "Rejected" ~ "Rejected",
+      TRUE ~ NA_character_
+    ),
+    
+    prov_status_simple = factor(
+      prov_status_simple,
+      levels = c("Accepted in Full", "Accepted in Part", "Rejected")
+    )
+  )
+tab <- table(prov$prov_status_simple, prov$county)
+
+# column percentages (each county = 100%)
+col_perc <- prop.table(tab, margin = 2) * 100
+
+col_perc
+
+
+
+```
+
+     Allegany County Anne Arundel County Baltimore City Baltimore County Calvert County Caroline County
+  Not Same Day        79.51220            78.28373       79.34783         77.02570       81.23286        82.63401
+  Same Day            20.48780            21.71627       20.65217         22.97430       18.76714        17.36599
+              
+               Carroll County Cecil County Charles County Dorchester County Early Voting Frederick County
+  Not Same Day       77.63427     82.82957       81.21049          80.53519     83.62566         75.70437
+  Same Day           22.36573     17.17043       18.78951          19.46481     16.37434         24.29563
+              
+               Garrett County Harford County Howard County Kent County Montgomery County Prince George's County
+  Not Same Day       70.64665       78.95997      82.51646    80.53204          81.50985               67.45887
+  Same Day           29.35335       21.04003      17.48354    19.46796          18.49015               32.54113
+              
+               Queen Anne's County Saint Mary's County Somerset County Talbot County Washington County
+  Not Same Day            79.00188            71.52174        79.81187      74.82315          85.23677
+  Same Day                20.99812            28.47826        20.18813      25.17685          14.76323
+              
+               Wicomico County Worcester County
+  Not Same Day        82.31293         77.13098
+  Same Day            17.68707         22.86902
+
+
+
+
+
+
+
+                      Allegany County Anne Arundel County Baltimore City Baltimore County Calvert County
+  Accepted in Full       79.378049           79.939584      77.156660        78.050836      72.643280
+  Accepted in Part       18.682927           17.565451      20.669427        19.716332      23.531110
+  Rejected                1.939024            2.494965       2.173913         2.232832       3.825610
+                  
+                   Caroline County Carroll County Cecil County Charles County Dorchester County Early Voting
+  Accepted in Full       77.757030      80.028351    81.483363      71.154296         78.775660    84.274344
+  Accepted in Part       19.431019      17.215309    14.528829      24.467338         18.841642    14.113919
+  Rejected                2.811951       2.756340     3.987808       4.378366          2.382698     1.611736
+                  
+                   Frederick County Garrett County Harford County Howard County Kent County Montgomery County
+  Accepted in Full        75.663536      72.032333      74.619234     58.266277   72.744861         76.914661
+  Accepted in Part        22.907309      24.803695      21.627502     40.014631   25.223700         21.334792
+  Rejected                 1.429155       3.163972       3.753264      1.719093    2.031439          1.750547
+                  
+                   Prince George's County Queen Anne's County Saint Mary's County Somerset County Talbot County
+  Accepted in Full              75.137112           71.657250           65.434783       61.143271     56.559486
+  Accepted in Part              16.514321           26.082863           31.086957       33.357453     39.903537
+  Rejected                       8.348568            2.259887            3.478261        5.499276      3.536977
+                  
+                   Washington County Wicomico County Worcester County
+  Accepted in Full         76.323120       76.870748        83.991684
+  Accepted in Part         22.562674       21.768707        14.137214
+  Rejected                  1.114206        1.360544         1.871102
+
+
+
+
+
+
+```{r}
+
+
+
+
+
+
+
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
